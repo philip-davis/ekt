@@ -1,16 +1,16 @@
-#include<fcntl.h>
-#include<inttypes.h>
-#include<stdint.h>
-#include<stdlib.h>
-#include<stdio.h>
-#include<string.h>
-#include<sys/stat.h>
-#include<sys/types.h>
-#include<unistd.h>
+#include <fcntl.h>
+#include <inttypes.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 
-#include<margo.h>
+#include <margo.h>
 
-#include<mpi.h>
+#include <mpi.h>
 
 #include "ekt.h"
 #include "ekt_types.h"
@@ -19,7 +19,7 @@
 
 static char *get_address(margo_instance_id mid)
 {
-    hg_addr_t my_addr; 
+    hg_addr_t my_addr;
     hg_size_t my_addr_size;
     char *my_addr_str;
 
@@ -29,12 +29,11 @@ static char *get_address(margo_instance_id mid)
     margo_addr_to_string(mid, my_addr_str, &my_addr_size, my_addr);
     margo_addr_free(mid, my_addr);
 
-    return(my_addr_str);
+    return (my_addr_str);
 }
 
 DECLARE_MARGO_RPC_HANDLER(hello_rpc);
 static void hello_rpc(hg_handle_t h);
-
 
 static int gather_addresses(struct ekt_id *ekth)
 {
@@ -48,13 +47,13 @@ static int gather_addresses(struct ekt_id *ekth)
     int addr_buf_size = 0;
     char *addr_str_buf;
     int i;
-    
 
     while(per_collector * per_collector < ekth->app_size) {
         per_collector *= 1;
     }
 
-    MPI_Comm_split(ekth->comm, ekth->rank / per_collector, ekth->rank, &gather_comm);
+    MPI_Comm_split(ekth->comm, ekth->rank / per_collector, ekth->rank,
+                   &gather_comm);
     MPI_Comm_rank(gather_comm, &grank);
     MPI_Comm_size(gather_comm, &gsize);
 
@@ -63,7 +62,8 @@ static int gather_addresses(struct ekt_id *ekth)
         size_psum = malloc(sizeof(*size_psum) * gsize);
     }
     my_addr_size = strlen(ekth->my_addr_str) + 1;
-    MPI_Gather(&my_addr_size, 1, MPI_INT, addr_sizes, 1, MPI_INT, 0, gather_comm);
+    MPI_Gather(&my_addr_size, 1, MPI_INT, addr_sizes, 1, MPI_INT, 0,
+               gather_comm);
     if(grank == 0) {
         addr_buf_size = 0;
         for(i = 0; i < gsize; i++) {
@@ -72,7 +72,8 @@ static int gather_addresses(struct ekt_id *ekth)
         }
         addr_str_buf = malloc(addr_buf_size);
     }
-    MPI_Gatherv(ekth->my_addr_str, my_addr_size, MPI_CHAR, addr_str_buf, addr_sizes, size_psum, MPI_CHAR, 0, gather_comm);
+    MPI_Gatherv(ekth->my_addr_str, my_addr_size, MPI_CHAR, addr_str_buf,
+                addr_sizes, size_psum, MPI_CHAR, 0, gather_comm);
     if(grank == 0) {
         ekth->gather_addrs = malloc(sizeof(*ekth->gather_addrs) * gsize);
         for(i = 0; i < gsize; i++) {
@@ -84,23 +85,26 @@ static int gather_addresses(struct ekt_id *ekth)
     } else {
         ekth->gather_addrs = NULL;
         ekth->gather_count = 0;
-    }  
-    
+    }
+
     ekth->collector_addrs = NULL;
     ekth->collector_count = 0;
     ekth->collector_addrs_len = 0;
 
-    // Maybe a better MPI operation for this...we only care about the ranks that are gathering.
-    MPI_Comm_split(ekth->comm, ekth->rank % per_collector, ekth->rank, &collector_comm);
+    // Maybe a better MPI operation for this...we only care about the ranks that
+    // are gathering.
+    MPI_Comm_split(ekth->comm, ekth->rank % per_collector, ekth->rank,
+                   &collector_comm);
     if(grank == 0) {
         MPI_Comm_rank(collector_comm, &crank);
         MPI_Comm_size(collector_comm, &csize);
-        
+
         if(crank == 0) {
             addr_sizes = malloc(sizeof(*addr_sizes * csize));
             size_psum = malloc(sizeof(*size_psum * csize));
         }
-        MPI_Gather(&my_addr_size, 1, MPI_INT, addr_sizes, 1, MPI_INT, 0, collector_comm);
+        MPI_Gather(&my_addr_size, 1, MPI_INT, addr_sizes, 1, MPI_INT, 0,
+                   collector_comm);
         if(crank == 0) {
             addr_buf_size = 0;
             for(i = 0; i < csize; i++) {
@@ -109,7 +113,8 @@ static int gather_addresses(struct ekt_id *ekth)
             }
             addr_str_buf = malloc(addr_buf_size);
         }
-        MPI_Gatherv(ekth->my_addr_str, my_addr_size, MPI_CHAR, addr_str_buf, addr_sizes, size_psum, MPI_CHAR, 0, collector_comm);
+        MPI_Gatherv(ekth->my_addr_str, my_addr_size, MPI_CHAR, addr_str_buf,
+                    addr_sizes, size_psum, MPI_CHAR, 0, collector_comm);
         if(crank == 0) {
             ekth->collector_addrs = addr_str_buf;
             ekth->collector_count = csize;
@@ -119,7 +124,6 @@ static int gather_addresses(struct ekt_id *ekth)
 
     MPI_Comm_free(&gather_comm);
     MPI_Comm_free(&collector_comm);
-  
 }
 
 static int write_bootstrap_conf(struct ekt_id *ekth)
@@ -129,10 +133,8 @@ static int write_bootstrap_conf(struct ekt_id *ekth)
     size_t fname_len;
     int file;
     int file_locked = 0;
-    struct flock lock = { .l_type = F_WRLCK, 
-                          .l_whence = SEEK_SET, 
-                          .l_start = 0,
-                          .l_len = 0 };
+    struct flock lock = {
+        .l_type = F_WRLCK, .l_whence = SEEK_SET, .l_start = 0, .l_len = 0};
     char eofc = 0x0a;
     int ret;
 
@@ -143,29 +145,33 @@ static int write_bootstrap_conf(struct ekt_id *ekth)
 
     file = open(fname, O_CREAT | O_EXCL | O_WRONLY, S_IRUSR | S_IWUSR);
     if(file < 0) {
-        fprintf(stderr, "ERROR: %s: unable to open '%s' for writing: ", __func__, fname);
+        fprintf(stderr,
+                "ERROR: %s: unable to open '%s' for writing: ", __func__,
+                fname);
         perror(NULL);
-        return(-1);
+        return (-1);
     }
 
     if(fcntl(file, F_SETLK, &lock) < 0) {
         fprintf(stderr, "ERROR: %s: unable to lock '%s': ", __func__, fname);
         perror(NULL);
         close(file);
-        return(-1);
-    } 
+        return (-1);
+    }
 
     write(file, ekth->my_addr_str, strlen(ekth->my_addr_str) + 1);
     fsync(file);
 
     lock.l_type = F_UNLCK;
     if(fcntl(file, F_SETLK, &lock) < 0) {
-        fprintf(stderr, "WARNING: %s: could not unlock '%s'. This will cause problems with other apps connecting. ", __func__, fname);
+        fprintf(stderr,
+                "WARNING: %s: could not unlock '%s'. This will cause problems "
+                "with other apps connecting. ",
+                __func__, fname);
     }
 
     close(file);
     free(fname);
-    
 }
 
 static void delete_bootstrap_conf(struct ekt_id *ekth)
@@ -183,8 +189,8 @@ static void delete_bootstrap_conf(struct ekt_id *ekth)
     free(fname);
 }
 
-
-int ekt_init(struct ekt_id **ekt_handle, const char *app_name, MPI_Comm comm, margo_instance_id mid)
+int ekt_init(struct ekt_id **ekt_handle, const char *app_name, MPI_Comm comm,
+             margo_instance_id mid)
 {
     struct ekt_id *ekth;
     hg_bool_t flag;
@@ -195,7 +201,7 @@ int ekt_init(struct ekt_id **ekt_handle, const char *app_name, MPI_Comm comm, ma
 
     for(i = 0; i < EKT_WATCH_HASH_SIZE; i++) {
         ekth->watch_cbs[i] = NULL;
-    }   
+    }
 
     ekth->app_name = strdup(app_name);
 
@@ -223,7 +229,7 @@ int ekt_init(struct ekt_id **ekt_handle, const char *app_name, MPI_Comm comm, ma
 
     *ekt_handle = ekth;
 
-    return(0); 
+    return (0);
 }
 
 int ekt_fini(struct ekt_id **ekt_handle)
@@ -256,7 +262,7 @@ int ekt_fini(struct ekt_id **ekt_handle)
 int ekt_connect(struct ekt_id *ekt_handle, const char *peer)
 {
     // rank 0 reads bootstrapping conf
-    
+
     /* rank 0 contacts rank 0 of peer:
             send greeting rpc
             response is peer's collector_addrs and app size
@@ -270,8 +276,8 @@ int ekt_connect(struct ekt_id *ekt_handle, const char *peer)
 
     /* all contact peer ranks to buildup mesh
         ask peer collector nodes for outgoing peer rank addresses
-        local collector nodes provide addresses to incoming peer ranks 
-    */ 
+        local collector nodes provide addresses to incoming peer ranks
+    */
 }
 
 int ekt_watch(struct ekt_id *ekt_handle, struct ekt_type *type, watch_fn cb)
@@ -282,22 +288,23 @@ int ekt_watch(struct ekt_id *ekt_handle, struct ekt_type *type, watch_fn cb)
 
     while(*cb_node) {
         if((*cb_node)->type_id) {
-            fprintf(stderr, "ERROR: %s: already watching type_id %i.\n", __func__, type_id);
-            return(-1);
+            fprintf(stderr, "ERROR: %s: already watching type_id %i.\n",
+                    __func__, type_id);
+            return (-1);
         }
         cb_node = &((*cb_node)->next);
     }
     *cb_node = malloc(sizeof(**cb_node));
-    
+
     (*cb_node)->type_id = type_id;
     (*cb_node)->cb = cb;
     (*cb_node)->next = NULL;
 
-    return(0); 
-        
+    return (0);
 }
 
-int ekt_handle_announce(struct ekt_id *ekt_handle, struct ekt_type *type, void *data)
+int ekt_handle_announce(struct ekt_id *ekt_handle, struct ekt_type *type,
+                        void *data)
 {
     int type_id = type->type_id;
     int type_hash = type_id % EKT_WATCH_HASH_SIZE;
@@ -306,16 +313,18 @@ int ekt_handle_announce(struct ekt_id *ekt_handle, struct ekt_type *type, void *
     while(cb_node) {
         if(cb_node->type_id == type_id) {
             break;
-        }  
+        }
         cb_node = cb_node->next;
     };
 
     if(!cb_node) {
-        fprintf(stderr, "WARNING: received announcement with unknown type %d.\n", type_id);
-        return(0);
+        fprintf(stderr,
+                "WARNING: received announcement with unknown type %d.\n",
+                type_id);
+        return (0);
     }
 
-    return(cb_node->cb(data, type->arg));
+    return (cb_node->cb(data, type->arg));
 }
 
 int ekt_tell(struct ekt_id *ekt_handle, struct ekt_type *type, void *data)
@@ -325,12 +334,13 @@ int ekt_tell(struct ekt_id *ekt_handle, struct ekt_type *type, void *data)
     // handle locally
     ekt_handle_announce(ekt_handle, type, data);
 
-    return(0);
+    return (0);
 }
 
-int ekt_register(uint32_t type_id, serdes_fn ser, serdes_fn des, void *arg, struct ekt_type **type)
+int ekt_register(uint32_t type_id, serdes_fn ser, serdes_fn des, void *arg,
+                 struct ekt_type **type)
 {
-    struct ekt_type *ektt; 
+    struct ekt_type *ektt;
 
     *type = malloc(sizeof(**type));
     ektt = *type;
@@ -340,11 +350,11 @@ int ekt_register(uint32_t type_id, serdes_fn ser, serdes_fn des, void *arg, stru
     ektt->arg = arg;
     ektt->type_id = type_id;
 
-    return(0);
+    return (0);
 }
 
-int ekt_deregister(struct ekt_type **type) 
+int ekt_deregister(struct ekt_type **type)
 {
     free(*type);
-    *type = NULL;    
+    *type = NULL;
 }
