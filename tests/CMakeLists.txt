@@ -29,4 +29,7 @@ target_link_libraries(simple_test ${GTEST} pthread)
 
 include(GoogleTest)
 
+add_executable(ekt_test_local ekt_test_local.c)
+target_link_libraries(ekt_test_local ekt)
+
 gtest_add_tests(TARGET simple_test)

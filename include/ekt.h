@@ -1,6 +1,9 @@
 #ifndef _EKT_H_
 #define _EKT_H_
 
+#include <mpi.h>
+#include <margo.h>
+
 #if defined(__cplusplus)
 extern "C" {
 #endif
