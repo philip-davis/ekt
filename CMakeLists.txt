@@ -8,10 +8,13 @@
 #      -DCMAKE_PREFIX_PATH='/dir1;/dir2;/dir3'
 #
 
-cmake_minimum_required (VERSION 3.0)
+cmake_minimum_required (VERSION 3.9)
 project (ekt VERSION 0.0.1 LANGUAGES C)
 
 include(GNUInstallDirs)
+include(ExternalProject)
+
+set_directory_properties(PROPERTIES EP_PREFIX ${CMAKE_BINARY_DIR}/ThirdParty)
 
 if(NOT CMAKE_ARCHIVE_OUTPUT_DIRECTORY)
   set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY
@@ -47,7 +50,7 @@ find_package(MPI COMPONENTS REQUIRED)
 
 add_subdirectory(src)
 add_subdirectory(include)
-#if(${ENABLE_TESTS})
-#  enable_testing()
-#  add_subdirectory(tests)
-#endif(${ENABLE_TESTS})
+if(${ENABLE_TESTS})
+  enable_testing()
+  add_subdirectory(tests)
+endif(${ENABLE_TESTS})
