@@ -1,0 +1,12 @@
+#!/bin/bash
+export PATH="@CMAKE_RUNTIME_OUTPUT_DIRECTORY@:${PATH}"
+
+rm -f *.ekt
+
+@MPIEXEC_EXECUTABLE@ @MPIEXEC_NUMPROC_FLAG@ 2 ekt_test_conn abc &
+abcproc=$!
+@MPIEXEC_EXECUTABLE@ @MPIEXEC_NUMPROC_FLAG@ 2 ekt_test_conn abc
+if [ $? != 0 ] ; then
+	exit 1
+fi
+wait $abcproc

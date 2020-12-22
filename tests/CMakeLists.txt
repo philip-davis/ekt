@@ -1,3 +1,4 @@
+#[[
 ExternalProject_Add(
     googletest
     GIT_REPOSITORY https://github.com/google/googletest
@@ -28,8 +29,24 @@ find_library(GTEST gtest ${binary_dir}/lib)
 target_link_libraries(simple_test ${GTEST} pthread)
 
 include(GoogleTest)
+gtest_add_tests(TARGET simple_test)
+]]
 
 add_executable(ekt_test_local ekt_test_local.c)
 target_link_libraries(ekt_test_local ekt)
+add_test(NAME test_local COMMAND $<TARGET_FILE:ekt_test_local>)
+set_tests_properties(test_local PROPERTIES TIMEOUT 30)
 
-gtest_add_tests(TARGET simple_test)
+add_executable(ekt_test_conn ekt_test_conn.c)
+target_link_libraries(ekt_test_conn ekt)
+
+configure_file(
+  ${PROJECT_SOURCE_DIR}/tests/conn_test.sh.in
+  ${PROJECT_BINARY_DIR}/tests/conn_test.sh
+  @ONLY
+)
+
+find_program (BASH_PROGRAM bash)
+
+add_test(test_conn ${BASH_PROGRAM} conn_test.sh)
+set_tests_properties(test_conn PROPERTIES TIMEOUT 30)
