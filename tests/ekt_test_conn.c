@@ -89,7 +89,7 @@ int main(int argc, char **argv)
     MPI_Init(NULL, NULL);
     mid = margo_init("sm", MARGO_SERVER_MODE, 1, 1);
 
-    ekt_init(&ekt_h, "me", MPI_COMM_WORLD, mid);
+    ekt_init(&ekt_h, app_name, MPI_COMM_WORLD, mid);
     ekt_register(EKT_MY_TYPE, serialize_my_data, deserialize_my_data,
                  &wait, &my_type);
     ekt_watch(ekt_h, my_type, my_type_check);

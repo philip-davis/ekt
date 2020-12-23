@@ -5,7 +5,7 @@ rm -f *.ekt
 
 @MPIEXEC_EXECUTABLE@ @MPIEXEC_NUMPROC_FLAG@ 2 ekt_test_conn abc &
 abcproc=$!
-@MPIEXEC_EXECUTABLE@ @MPIEXEC_NUMPROC_FLAG@ 2 ekt_test_conn abc
+@MPIEXEC_EXECUTABLE@ @MPIEXEC_NUMPROC_FLAG@ 2 ekt_test_conn def abc
 if [ $? != 0 ] ; then
 	exit 1
 fi
