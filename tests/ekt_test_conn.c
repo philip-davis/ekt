@@ -19,7 +19,7 @@ struct wait_file {
 static int my_type_check(void *my_datav, void *wfilev)
 {
     struct wait_file *wait = (struct wait_file *)wfilev;
-    struct my_data *check_data  = &wait->check_data;
+    struct my_data *check_data = &wait->check_data;
     struct my_data *my_data = my_datav;
     int ret = 0;
 
@@ -73,13 +73,15 @@ int main(int argc, char **argv)
 
     if(argc < 2 || argc > 3) {
         printf("Usage: ekt_test_conn <app_name> <peer_name>\n");
-        return(-1);
-    } 
+        return (-1);
+    }
 
     app_name = argv[1];
     if(argc > 2) {
         peer_name = argv[2];
-    } 
+    }
+
+    ABT_init(0, NULL);
 
     ABT_mutex_create(&wait.wait_mtx);
     ABT_cond_create(&wait.wait_cond);
@@ -109,6 +111,8 @@ int main(int argc, char **argv)
 
     margo_finalize(mid);
     MPI_Finalize();
+
+    ABT_finalize();
 
     return (0);
 }

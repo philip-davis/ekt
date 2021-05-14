@@ -11,11 +11,21 @@ struct watch_list_node {
     struct watch_list_node *next;
 };
 
+struct ekt_peer {
+    struct ekt_peer *next;
+    char *name;
+    size_t size;
+    size_t rank_count;
+    char **peer_addrs;
+};
+
 #define EKT_WATCH_HASH_SIZE 16
 struct ekt_id {
     struct watch_list_node *watch_cbs[EKT_WATCH_HASH_SIZE];
     char *app_name;
     MPI_Comm comm;
+    MPI_Comm gather_comm;
+    MPI_Comm collector_comm;
     int rank;
     int app_size;
     margo_instance_id mid;
@@ -26,8 +36,13 @@ struct ekt_id {
     char *collector_addrs;
     int collector_addrs_len;
 
+    struct ekt_peer *peers;
+    ABT_mutex peer_mutex;
+
     // margo rpc handles
     hg_id_t hello_id;
+    hg_id_t query_addrs_id;
+    hg_id_t tell_id;
 };
 
 struct ekt_type {
@@ -35,13 +50,6 @@ struct ekt_type {
     serdes_fn des;
     void *arg;
     int type_id;
-};
-
-struct ekt_peer {
-    char *app_name;
-    size_t peer_size;
-    size_t peer_rank_count;
-    int *peer_ranks;
 };
 
 typedef struct ekt_buf {
@@ -87,3 +95,5 @@ static inline hg_return_t hg_proc_ekt_buf_t(hg_proc_t proc, void *data)
 
 MERCURY_GEN_PROC(hello_in_t, ((hg_string_t)(name))((uint32_t)(size)));
 MERCURY_GEN_PROC(hello_out_t, ((uint32_t)(size))((ekt_buf_t)(addrs)));
+MERCURY_GEN_PROC(query_addrs_in_t, ((uint32_t)(start))((uint32_t)(end)));
+MERCURY_GEN_PROC(tell_in_t, ((uint32_t)(type_id))((ekt_buf_t)(data)));

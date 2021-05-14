@@ -1,8 +1,8 @@
 #ifndef _EKT_H_
 #define _EKT_H_
 
-#include <mpi.h>
 #include <margo.h>
+#include <mpi.h>
 
 #if defined(__cplusplus)
 extern "C" {
@@ -15,7 +15,8 @@ typedef struct ekt_id *ekt_id;
 typedef struct ekt_type *ekt_type;
 typedef struct ekt_peer *ekt_peer;
 
-int ekt_init(struct ekt_id **ekt_handle, const char *app_name, MPI_Comm comm, margo_instance_id mid);
+int ekt_init(struct ekt_id **ekt_handle, const char *app_name, MPI_Comm comm,
+             margo_instance_id mid);
 
 int ekt_fini(struct ekt_id **ekt_handle);
 
