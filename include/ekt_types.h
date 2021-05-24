@@ -5,9 +5,17 @@
 typedef int (*serdes_fn)(void *, void *, void **);
 typedef int (*watch_fn)(void *, void *);
 
+struct ekt_type {
+    serdes_fn ser;
+    serdes_fn des;
+    void *arg;
+    int type_id;
+};
+
 struct watch_list_node {
     int type_id;
     watch_fn cb;
+    struct ekt_type *type;
     struct watch_list_node *next;
 };
 
@@ -31,6 +39,7 @@ struct ekt_id {
     margo_instance_id mid;
     char *my_addr_str;
     char **gather_addrs;
+    int gather_addrs_len;
     int gather_count;
     int collector_count;
     char *collector_addrs;
@@ -43,13 +52,6 @@ struct ekt_id {
     hg_id_t hello_id;
     hg_id_t query_addrs_id;
     hg_id_t tell_id;
-};
-
-struct ekt_type {
-    serdes_fn ser;
-    serdes_fn des;
-    void *arg;
-    int type_id;
 };
 
 typedef struct ekt_buf {
@@ -86,7 +88,6 @@ static inline hg_return_t hg_proc_ekt_buf_t(hg_proc_t proc, void *data)
         break;
     case HG_FREE:
         free(buf->buf);
-        free(buf);
         ret = HG_SUCCESS;
     }
 

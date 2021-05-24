@@ -19,6 +19,10 @@
 
 #define EKT_FILE_SUFFIX ".ekt"
 
+int ekt_handle_announce(struct ekt_id *ekt_handle, int type_id, void *data);
+
+static void map_from_collector(int collector, int size, int *start, int *end);
+
 static char *get_address(margo_instance_id mid)
 {
     hg_addr_t my_addr;
@@ -49,7 +53,7 @@ static int gather_addresses(struct ekt_id *ekth)
 {
     MPI_Comm gather_comm;
     MPI_Comm collector_comm;
-    int per_collector = 1;
+    int collector_count, per_collector;
     int grank, gsize, crank, csize;
     int *addr_sizes = NULL;
     int *size_psum = NULL;
@@ -58,9 +62,11 @@ static int gather_addresses(struct ekt_id *ekth)
     char *addr_str_buf;
     int i;
 
-    while(per_collector * per_collector < ekth->app_size) {
-        per_collector++;
+    collector_count = 1;
+    while(collector_count * collector_count < ekth->app_size) {
+        collector_count++;
     }
+    per_collector = ekth->app_size / collector_count;
 
     MPI_Comm_split(ekth->comm, ekth->rank / per_collector, ekth->rank,
                    &gather_comm);
@@ -89,12 +95,14 @@ static int gather_addresses(struct ekt_id *ekth)
         for(i = 0; i < gsize; i++) {
             ekth->gather_addrs[i] = &addr_str_buf[size_psum[i]];
         }
+        ekth->gather_addrs_len = addr_buf_size;
         ekth->gather_count = gsize;
         free(addr_sizes);
         free(size_psum);
     } else {
         ekth->gather_addrs = NULL;
         ekth->gather_count = 0;
+        ekth->gather_addrs_len = 0;
     }
 
     ekth->collector_addrs = NULL;
@@ -310,7 +318,9 @@ static void query_addrs_rpc(hg_handle_t handle)
     const struct hg_info *info;
     struct ekt_id *ekth;
     query_addrs_in_t in;
+    ekt_buf_t out;
     int crank;
+    int mystart, myend;
     hg_return_t hret;
 
     mid = margo_hg_handle_get_instance(handle);
@@ -335,10 +345,52 @@ static void query_addrs_rpc(hg_handle_t handle)
                 __func__, in.start, in.end, ekth->rank);
     }
 
+    map_from_collector(crank, ekth->app_size, &mystart, &myend);
+    if(map_to_collector(in.end + 1, ekth->app_size) == crank) {
+        out.len = ekth->gather_addrs[(in.end + 1) - mystart] -
+                  ekth->gather_addrs[in.start - mystart];
+    } else {
+        out.len =
+            ekth->gather_addrs_len -
+            (ekth->gather_addrs[in.start - mystart] - ekth->gather_addrs[0]);
+    }
+
+    out.buf = malloc(out.len);
+    memcpy(out.buf, ekth->gather_addrs[in.start - mystart], out.len);
+    margo_respond(handle, &out);
+
     margo_free_input(handle, &in);
     margo_destroy(handle);
+    free(out.buf);
 }
 DEFINE_MARGO_RPC_HANDLER(query_addrs_rpc)
+
+static int deser_tell_data(struct ekt_id *ekth, int type_id, void *ser_data,
+                           void **deser_data)
+{
+    int type_hash = type_id % EKT_WATCH_HASH_SIZE;
+    struct watch_list_node *cb_node = ekth->watch_cbs[type_hash];
+    struct ekt_type *type;
+
+    while(cb_node) {
+        if(cb_node->type_id == type_id) {
+            break;
+        }
+        cb_node = cb_node->next;
+    }
+
+    if(!cb_node) {
+        fprintf(stderr,
+                "WARNING: received announcement with unknown type %d.\n",
+                type_id);
+        return (-1);
+    }
+
+    type = cb_node->type;
+    type->des(ser_data, type->arg, deser_data);
+
+    return (0);
+}
 
 static void tell_rpc(hg_handle_t handle)
 {
@@ -346,6 +398,7 @@ static void tell_rpc(hg_handle_t handle)
     const struct hg_info *info;
     struct ekt_id *ekth;
     tell_in_t in;
+    void *data;
     hg_return_t hret;
 
     mid = margo_hg_handle_get_instance(handle);
@@ -354,7 +407,13 @@ static void tell_rpc(hg_handle_t handle)
 
     hret = margo_get_input(handle, &in);
 
-    // ekt_handle_announce(ekth, in.type_id,
+    deser_tell_data(ekth, in.type_id, in.data.buf, &data);
+    ekt_handle_announce(ekth, in.type_id, data);
+
+    free(data);
+
+    margo_free_input(handle, &in);
+    margo_destroy(handle);
 }
 DEFINE_MARGO_RPC_HANDLER(tell_rpc)
 
@@ -460,7 +519,7 @@ static int map_to_collector(int rank, int size)
 {
     int count = get_collector_count(size);
 
-    return (rank / count);
+    return (rank / (size / count));
 }
 
 static void map_from_collector(int collector, int size, int *start, int *end)
@@ -506,6 +565,7 @@ static void distribute_g2c(struct ekt_id *ekth, int peer_size,
                            char **peer_caddrs, int *addrs_count, char **caddr)
 {
     int *cmap, *gmap;
+    int crank;
     int first, last, firstc, lastc;
     int *addr_list_lens;
     char **srcs;
@@ -513,6 +573,7 @@ static void distribute_g2c(struct ekt_id *ekth, int peer_size,
     int addrs_len;
     int i, j;
 
+    MPI_Comm_rank(ekth->collector_comm, &crank);
     cmap = partition_seq(peer_size, ekth->collector_count);
     if(ekth->rank == 0) {
         addr_list_lens =
@@ -534,7 +595,9 @@ static void distribute_g2c(struct ekt_id *ekth, int peer_size,
                 }
                 srcs[i] = peer_caddrs[firstc];
             }
-            *addrs_count = (lastc - firstc) + 1;
+            if(i == crank) {
+                *addrs_count = (lastc - firstc) + 1;
+            }
         }
     }
     MPI_Scatter(addr_list_lens, 1, MPI_INT, &addrs_len, 1, MPI_INT, 0,
@@ -938,15 +1001,14 @@ int ekt_watch(struct ekt_id *ekt_handle, struct ekt_type *type, watch_fn cb)
 
     (*cb_node)->type_id = type_id;
     (*cb_node)->cb = cb;
+    (*cb_node)->type = type;
     (*cb_node)->next = NULL;
 
     return (0);
 }
 
-int ekt_handle_announce(struct ekt_id *ekt_handle, struct ekt_type *type,
-                        void *data)
+int ekt_handle_announce(struct ekt_id *ekt_handle, int type_id, void *data)
 {
-    int type_id = type->type_id;
     int type_hash = type_id % EKT_WATCH_HASH_SIZE;
     struct watch_list_node *cb_node = ekt_handle->watch_cbs[type_hash];
 
@@ -955,7 +1017,7 @@ int ekt_handle_announce(struct ekt_id *ekt_handle, struct ekt_type *type,
             break;
         }
         cb_node = cb_node->next;
-    };
+    }
 
     if(!cb_node) {
         fprintf(stderr,
@@ -964,21 +1026,72 @@ int ekt_handle_announce(struct ekt_id *ekt_handle, struct ekt_type *type,
         return (0);
     }
 
-    return (cb_node->cb(data, type->arg));
+    return (cb_node->cb(data, cb_node->type->arg));
 }
 
-int ekt_tell(struct ekt_id *ekt_handle, struct ekt_type *type, void *data)
+static int ekt_tell_peer(struct ekt_id *ekth, struct ekt_peer *peer,
+                         struct ekt_type *type, void *data, int data_size)
 {
+    int type_id;
+    tell_in_t in;
+    hg_handle_t handle;
+    hg_addr_t peer_addr;
+    hg_return_t hret;
+    int i;
+
+    if(!type) {
+        fprintf(stderr, "ERROR: bad type passed to ekt_tell.\n");
+        return (-1);
+    }
+    in.type_id = type->type_id;
+    in.data.len = data_size;
+    in.data.buf = data;
+
+    for(i = 0; i < peer->rank_count; i++) {
+        margo_addr_lookup(ekth->mid, peer->peer_addrs[i], &peer_addr);
+        hret = margo_create(ekth->mid, peer_addr, ekth->tell_id, &handle);
+        if(hret != HG_SUCCESS) {
+            fprintf(stderr, "ERROR: failed to create hello rpc (%d)\n", hret);
+            return (-1);
+        }
+        hret = margo_forward(handle, &in);
+        if(hret != HG_SUCCESS) {
+            fprintf(stderr, "ERROR: failed to send hello rpc (%d)\n", hret);
+            margo_destroy(handle);
+            return (-1);
+        }
+    }
+}
+
+int ekt_tell(struct ekt_id *ekth, struct ekt_type *type, void *data)
+{
+    struct ekt_peer *peer;
+    int data_size;
+    void *ser_data = NULL;
 
     // transmit to all other ekt clients
+    peer = ekth->peers;
+    if(peer) {
+        data_size = type->ser(data, type->arg, &ser_data);
+    }
+
+    while(peer) {
+        ekt_tell_peer(ekth, peer, type, ser_data, data_size);
+        peer = peer->next;
+    }
+
+    if(ser_data) {
+        free(ser_data);
+    }
+
     // handle locally
-    ekt_handle_announce(ekt_handle, type, data);
+    ekt_handle_announce(ekth, type->type_id, data);
 
     return (0);
 }
 
-int ekt_register(uint32_t type_id, serdes_fn ser, serdes_fn des, void *arg,
-                 struct ekt_type **type)
+int ekt_register(struct ekt_id *ekth, uint32_t type_id, serdes_fn ser,
+                 serdes_fn des, void *arg, struct ekt_type **type)
 {
     struct ekt_type *ektt;
 

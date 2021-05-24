@@ -2,6 +2,7 @@
 
 #include <margo.h>
 
+#include <inttypes.h>
 #include <mpi.h>
 
 struct my_data {
@@ -26,6 +27,10 @@ static int my_type_check(void *my_datav, void *wfilev)
     if(my_data->id != check_data->id || my_data->value != check_data->value) {
         ret = -1;
         printf("WARNING: check_data did not match!\n");
+        printf("Expected id %" PRIu32 ", got %" PRIu32 "\n", check_data->id,
+               my_data->id);
+        printf("Expcted value %" PRId64 ", got %" PRId64 "\n",
+               check_data->value, my_data->value);
     }
 
     ABT_mutex_lock(wait->wait_mtx);
@@ -39,13 +44,14 @@ static int my_type_check(void *my_datav, void *wfilev)
 static int serialize_my_data(void *my_datav, void *checkv, void **buf)
 {
     struct my_data *my_data = my_datav;
+    int data_size = sizeof(my_data->id) + sizeof(my_data->value);
 
-    *buf = malloc(sizeof(my_data->id) + sizeof(my_data->value));
+    *buf = malloc(data_size);
     memcpy(*buf, &my_data->id, sizeof(my_data->id));
     memcpy(&((char *)(*buf))[sizeof(my_data->id)], &my_data->value,
            sizeof(my_data->value));
 
-    return (0);
+    return (data_size);
 }
 
 static int deserialize_my_data(void *buf, void *checkv, void **my_datav)
@@ -92,7 +98,7 @@ int main(int argc, char **argv)
     mid = margo_init("sm", MARGO_SERVER_MODE, 1, 1);
 
     ekt_init(&ekt_h, app_name, MPI_COMM_WORLD, mid);
-    ekt_register(EKT_MY_TYPE, serialize_my_data, deserialize_my_data,
+    ekt_register(ekt_h, EKT_MY_TYPE, serialize_my_data, deserialize_my_data,
                  &wait, &my_type);
     ekt_watch(ekt_h, my_type, my_type_check);
     if(peer_name) {
