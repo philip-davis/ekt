@@ -6,6 +6,6 @@ includedir=${prefix}/include
 Name: ekt
 Description: collective, small announcements for large applications
 Version: @ekt_VERSION@
-
-Libs: -L${libdir} @PRIVATE_LIBS@
+Requires: margo mercury argobots
+Libs: -L${libdir} -lekt
 Cflags: -I${includedir}
