@@ -118,8 +118,8 @@ static int gather_addresses(struct ekt_id *ekth)
         MPI_Comm_size(collector_comm, &csize);
 
         if(crank == 0) {
-            addr_sizes = malloc(sizeof(*addr_sizes * csize));
-            size_psum = malloc(sizeof(*size_psum * csize));
+            addr_sizes = malloc(sizeof(*addr_sizes) * csize);
+            size_psum = malloc(sizeof(*size_psum) * csize);
         }
         MPI_Gather(&my_addr_size, 1, MPI_INT, addr_sizes, 1, MPI_INT, 0,
                    collector_comm);
@@ -1063,7 +1063,7 @@ static int ekt_tell_peer(struct ekt_id *ekth, struct ekt_peer *peer,
     }
 }
 
-int ekt_tell(struct ekt_id *ekth, struct ekt_type *type, void *data)
+int ekt_tell(struct ekt_id *ekth, const char *target, struct ekt_type *type, void *data)
 {
     struct ekt_peer *peer;
     int data_size;
@@ -1076,7 +1076,9 @@ int ekt_tell(struct ekt_id *ekth, struct ekt_type *type, void *data)
     }
 
     while(peer) {
-        ekt_tell_peer(ekth, peer, type, ser_data, data_size);
+        if(!target || strcmp(target, peer->name) == 0) {
+            ekt_tell_peer(ekth, peer, type, ser_data, data_size);
+        }
         peer = peer->next;
     }
 
