@@ -103,7 +103,7 @@ int main(int argc, char **argv)
     ekt_watch(ekt_h, my_type, my_type_check);
     if(peer_name) {
         ekt_connect(ekt_h, peer_name);
-        ekt_tell(ekt_h, my_type, &check_data);
+        ekt_tell(ekt_h, peer_name, my_type, &check_data);
     }
 
     while(wait.done == 0) {

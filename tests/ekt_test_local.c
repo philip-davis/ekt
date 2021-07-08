@@ -61,7 +61,7 @@ int main()
     ekt_register(ekt_h, EKT_MY_TYPE, serialize_my_data, deserialize_my_data,
                  &check_data, &my_type);
     ekt_watch(ekt_h, my_type, my_type_check);
-    ekt_tell(ekt_h, my_type, &check_data);
+    ekt_tell(ekt_h, NULL, my_type, &check_data);
     ekt_deregister(&my_type);
     ekt_fini(&ekt_h);
 
