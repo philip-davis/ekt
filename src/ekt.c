@@ -821,6 +821,7 @@ static void distribute_peers(struct ekt_id *ekth, char **peer_addrs,
     char *my_peers_buf;
     int *pmap;
     int first = 0;
+    void *scatter_buf;
     int i, j;
 
     MPI_Comm_rank(ekth->gather_comm, &grank);
@@ -829,6 +830,7 @@ static void distribute_peers(struct ekt_id *ekth, char **peer_addrs,
     pmap = partition_seq(peer_caddr_count, gsize);
     *local_pcount = pmap[grank];
     if(grank == 0) {
+        scatter_buf = *peer_addrs;
         offset = ekth->rank;
         pmap = partition_seq(peer_caddr_count, ekth->gather_count);
         displs = malloc(sizeof(*displs) * ekth->gather_count);
@@ -844,7 +846,7 @@ static void distribute_peers(struct ekt_id *ekth, char **peer_addrs,
     MPI_Scatter(sendcounts, 1, MPI_INT, &local_psize, 1, MPI_INT, 0,
                 ekth->gather_comm);
     my_peers_buf = malloc(local_psize);
-    MPI_Scatterv(*peer_addrs, sendcounts, displs, MPI_CHAR, my_peers_buf,
+    MPI_Scatterv(scatter_buf, sendcounts, displs, MPI_CHAR, my_peers_buf,
                  local_psize, MPI_CHAR, 0, ekth->gather_comm);
     deserialize_str_list(my_peers_buf, *local_pcount, my_peers);
     int detected_count = 0;
