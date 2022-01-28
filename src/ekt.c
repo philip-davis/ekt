@@ -1058,7 +1058,7 @@ static int ekt_tell_peer(struct ekt_id *ekth, struct ekt_peer *peer,
         }
         hret = margo_forward(handle, &in);
         if(hret != HG_SUCCESS) {
-            fprintf(stderr, "ERROR: failed to send hello rpc (%d)\n", hret);
+            fprintf(stderr, "ERROR: failed to forward notification (%d)\n", hret);
             margo_destroy(handle);
             return (-1);
         }
