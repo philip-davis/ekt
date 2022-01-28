@@ -1050,18 +1050,22 @@ static int ekt_tell_peer(struct ekt_id *ekth, struct ekt_peer *peer,
     in.data.buf = data;
 
     for(i = 0; i < peer->rank_count; i++) {
+        hg_handle_t handle;
+        margo_request req;
+
         margo_addr_lookup(ekth->mid, peer->peer_addrs[i], &peer_addr);
         hret = margo_create(ekth->mid, peer_addr, ekth->tell_id, &handle);
         if(hret != HG_SUCCESS) {
             fprintf(stderr, "ERROR: failed to create hello rpc (%d)\n", hret);
             return (-1);
         }
-        hret = margo_forward(handle, &in);
+        hret = margo_iforward(handle, &in, &req);
         if(hret != HG_SUCCESS) {
             fprintf(stderr, "ERROR: failed to forward notification (%d)\n", hret);
             margo_destroy(handle);
             return (-1);
         }
+        margo_destroy(handle);
     }
 }
 
