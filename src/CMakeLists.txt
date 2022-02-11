@@ -7,8 +7,11 @@ set (ekt-pkg "share/cmake/ekt")
 set (ekt-vers "${ekt_VERSION_MAJOR}.${ekt_VERSION_MINOR}")
 
 add_library(ekt ekt.c)
-target_link_libraries (ekt margo)
-target_include_directories (ekt PUBLIC $<INSTALL_INTERFACE:include>)
+target_link_libraries (ekt margo
+		${MPI_C_LIBRARIES}
+		 ${MPI_C_LINK_FLAGS})
+target_include_directories (ekt PUBLIC $<INSTALL_INTERFACE:include>
+					 ${MPI_C_INCLUDE_PATH})
 
 # local include's BEFORE, in case old incompatable .h files in prefix/include
 target_include_directories (ekt BEFORE PUBLIC
