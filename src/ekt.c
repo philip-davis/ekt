@@ -47,6 +47,9 @@ static void query_addrs_rpc(hg_handle_t h);
 DECLARE_MARGO_RPC_HANDLER(tell_rpc);
 static void tell_rpc(hg_handle_t h);
 
+DECLARE_MARGO_RPC_HANDLER(query_status_rpc);
+static void query_status_rpc(hg_handle_t h);
+
 static int map_to_collector(int rank, int size);
 
 static int gather_addresses(struct ekt_id *ekth)
@@ -417,6 +420,43 @@ static void tell_rpc(hg_handle_t handle)
 }
 DEFINE_MARGO_RPC_HANDLER(tell_rpc)
 
+static void query_status_rpc(hg_handle_t handle)
+{
+    margo_instance_id mid;
+    const struct hg_info *info;
+    struct ekt_id *ekth;
+    query_status_in_t in;
+    struct ekt_peer *peer;
+    uint32_t out = 0;
+    uint32_t wait;
+    hg_return_t hret;
+
+    mid = margo_hg_handle_get_instance(handle);
+    info = margo_get_info(handle);
+    ekth = (struct ekt_id *)margo_registered_data(mid, info->id);
+    hret = margo_get_input(handle, &in);
+    wait = in.flag;
+
+    ABT_mutex_lock(ekth->peer_mutex);
+    do {
+        for(peer = ekth->peers; peer; peer = peer->next) {
+            if(strcmp(in.name, peer->name) == 0) {
+                out = 1;
+                break;
+            }
+        }
+        if(!out && wait) {
+            ABT_cond_wait(ekth->peer_cond, ekth->peer_mutex);
+        }
+    } while(!out && wait);
+    ABT_mutex_unlock(ekth->peer_mutex);
+
+    margo_respond(handle, &out);
+    margo_free_input(handle, &in);
+    margo_destroy(handle);
+}
+DEFINE_MARGO_RPC_HANDLER(query_status_rpc)
+
 int ekt_init(struct ekt_id **ekt_handle, const char *app_name, MPI_Comm comm,
              margo_instance_id mid)
 {
@@ -446,6 +486,8 @@ int ekt_init(struct ekt_id **ekt_handle, const char *app_name, MPI_Comm comm,
         margo_registered_name(mid, "query_addr_rpc", &ekth->query_addrs_id,
                               &flag);
         margo_registered_name(mid, "tell_rpc", &ekth->tell_id, &flag);
+        margo_registered_name(mid, "query_status_rpc", &ekth->query_status_id,
+                              &flag);
     } else {
         ekth->hello_id = MARGO_REGISTER(mid, "hello_rpc", hello_in_t,
                                         hello_out_t, hello_rpc);
@@ -455,15 +497,20 @@ int ekt_init(struct ekt_id **ekt_handle, const char *app_name, MPI_Comm comm,
                            query_addrs_rpc);
         margo_register_data(mid, ekth->query_addrs_id, (void *)ekth, NULL);
         ekth->tell_id =
-            MARGO_REGISTER(mid, "tell_id", tell_in_t, void, tell_rpc);
+            MARGO_REGISTER(mid, "tell_rpc", tell_in_t, void, tell_rpc);
         margo_register_data(mid, ekth->tell_id, (void *)ekth, NULL);
         margo_registered_disable_response(mid, ekth->tell_id, HG_TRUE);
+        ekth->query_status_id =
+            MARGO_REGISTER(mid, "query_status_rpc", query_status_in_t, uint32_t,
+                           query_status_rpc);
+        margo_register_data(mid, ekth->query_status_id, (void *)ekth, NULL);
     }
 
     ekth->my_addr_str = get_address(mid);
     gather_addresses(ekth);
 
     ABT_mutex_create(&ekth->peer_mutex);
+    ABT_cond_create(&ekth->peer_cond);
     ekth->peers = NULL;
 
     if(ekth->rank == 0) {
@@ -735,65 +782,6 @@ static void get_peer_addrs(struct ekt_id *ekth, int peer_size,
     }
 }
 
-/*
-static void distribute_collectors(struct ekt_id *ekth, int peer_size,
-                                  char **collector_addrs,
-                                  int *addrs_len,
-                                  char **addr_list)
-{
-    int *gather_map;
-    int *collector_map;
-    int peer_rank = 0;
-    int *addr_list_lens;
-    char **collector_src;
-    int peer_collector_count;
-    int first_collector, last_collector;
-    MPI_Request req;
-    int i, j;
-
-    peer_collector_count = get_collector_count(peer_size);
-
-    collector_src = malloc(sizeof(*collector_src) * ekth->collector_count);
-    gather_map = malloc(sizeof(*gather_map) * ekth->collector_count);
-    addr_list_lens = malloc(sizeof(*addr_list_lens) * ekth->collector_count);
-
-    calc_gather_map(gather_map, ekth->collector_count, peer_size);
-    if(ekth->rank == 0) {
-        for(i = 0; i < ekth->collector_count; i++) {
-            if(gather_map[i] > 0) {
-                first_collector = peer_rank / peer_collector_count;
-                last_collector =
-                    (peer_rank + (gather_map[i] - 1)) / peer_collector_count;
-                addr_list_lens[i] = 0;
-                for(j = first_collector; j <= last_collector; j++) {
-                    addr_list_lens[i] += strlen(collector_addrs[i]) + 1;
-                }
-                collector_src[i] = collector_addrs[first_collector];
-            }
-            peer_rank += gather_map[i];
-        }
-    }
-    MPI_Scatter(addr_list_lens, 1, MPI_INT, addrs_len, 1, MPI_INT, 0,
-                ekth->collector_comm);
-
-    if(ekth->rank == 0) {
-        *addr_list = collector_addrs[0];
-        for(i = 1; i < ekth->collector_count; i++) {
-            if(gather_map[i] > 0) {
-                MPI_Isend(collector_src[i], addr_list_lens[i], MPI_BYTE, i, 0,
-                          ekth->collector_comm, &req);
-            }
-        }
-    } else {
-        *addr_list = malloc(*addrs_len);
-        MPI_Recv(*addr_list, *addrs_len, MPI_BYTE, 0, 0, ekth->collector_comm,
-                 MPI_STATUS_IGNORE);
-    }
-
-    printf("address: %s, addr_len: %d\n", *addr_list, *addrs_len);
-}
-*/
-
 static void deserialize_str_list(char *str, int count, char ***listp)
 {
     char **list;
@@ -891,7 +879,6 @@ void add_peer(struct ekt_id *ekth, const char *name, int size, int addr_count,
         peer->rank_count = addr_count;
         peer->peer_addrs = addrs;
     }
-    ABT_mutex_unlock(ekth->peer_mutex);
 }
 
 int ekt_connect(struct ekt_id *ekth, const char *peer)
@@ -980,7 +967,12 @@ int ekt_connect(struct ekt_id *ekth, const char *peer)
         local collector nodes provide addresses to incoming peer ranks
     */
     distribute_peers(ekth, peer_addrs, peer_caddr_count, &my_pcount, &my_peers);
+
+    ABT_mutex_lock(ekth->peer_mutex);
     add_peer(ekth, peer, peer_size, my_pcount, my_peers);
+    MPI_Barrier(ekth->comm);
+    ABT_cond_broadcast(ekth->peer_cond);
+    ABT_mutex_unlock(ekth->peer_mutex);
 
     return (0);
 }
@@ -1061,7 +1053,8 @@ static int ekt_tell_peer(struct ekt_id *ekth, struct ekt_peer *peer,
         }
         hret = margo_iforward(handle, &in, &req);
         if(hret != HG_SUCCESS) {
-            fprintf(stderr, "ERROR: failed to forward notification (%d)\n", hret);
+            fprintf(stderr, "ERROR: failed to forward notification (%d)\n",
+                    hret);
             margo_destroy(handle);
             return (-1);
         }
@@ -1069,7 +1062,8 @@ static int ekt_tell_peer(struct ekt_id *ekth, struct ekt_peer *peer,
     }
 }
 
-int ekt_tell(struct ekt_id *ekth, const char *target, struct ekt_type *type, void *data)
+int ekt_tell(struct ekt_id *ekth, const char *target, struct ekt_type *type,
+             void *data)
 {
     struct ekt_peer *peer;
     int data_size;
@@ -1118,4 +1112,34 @@ int ekt_deregister(struct ekt_type **type)
 {
     free(*type);
     *type = NULL;
+}
+
+int ekt_is_bidi(struct ekt_id *ekth, const char *name, int wait)
+{
+    struct ekt_peer *peer;
+    hg_addr_t peer_addr;
+    hg_handle_t handle;
+    query_status_in_t in;
+    uint32_t out;
+    hg_return_t hret;
+
+    ABT_mutex_lock(ekth->peer_mutex);
+    for(peer = ekth->peers; peer; peer = peer->next) {
+        if(strcmp(peer->name, name) == 0) {
+            margo_addr_lookup(ekth->mid, peer->peer_addrs[0], &peer_addr);
+            ABT_mutex_unlock(ekth->peer_mutex);
+            margo_create(ekth->mid, peer_addr, ekth->query_status_id, &handle);
+            in.name = strdup(name);
+            in.flag = wait;
+            margo_forward(handle, &in);
+            margo_get_output(handle, &out);
+            margo_destroy(handle);
+            free(in.name);
+            return (out);
+        }
+    }
+    ABT_mutex_unlock(ekth->peer_mutex);
+    fprintf(stderr, "ERROR: %s: '%s' is not a connected peer.\n", __func__,
+            name);
+    return (0);
 }

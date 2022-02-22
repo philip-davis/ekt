@@ -24,8 +24,10 @@ int ekt_connect(struct ekt_id *ekt_handle, const char *peer);
 
 int ekt_watch(struct ekt_id *ekt_handle, struct ekt_type *type, watch_fn cb);
 
-int ekt_tell(struct ekt_id *ekt_handle, const char *target, struct ekt_type *type,
-             void *data);
+int ekt_tell(struct ekt_id *ekt_handle, const char *target,
+             struct ekt_type *type, void *data);
+
+int ekt_is_bidi(struct ekt_id *ekth, const char *name, int wait);
 
 int ekt_register(struct ekt_id *ekt_handle, uint32_t type_id, serdes_fn ser,
                  serdes_fn des, void *arg, struct ekt_type **type);

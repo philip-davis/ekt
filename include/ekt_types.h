@@ -47,11 +47,13 @@ struct ekt_id {
 
     struct ekt_peer *peers;
     ABT_mutex peer_mutex;
+    ABT_cond peer_cond;
 
     // margo rpc handles
     hg_id_t hello_id;
     hg_id_t query_addrs_id;
     hg_id_t tell_id;
+    hg_id_t query_status_id;
 };
 
 typedef struct ekt_buf {
@@ -98,3 +100,4 @@ MERCURY_GEN_PROC(hello_in_t, ((hg_string_t)(name))((uint32_t)(size)));
 MERCURY_GEN_PROC(hello_out_t, ((uint32_t)(size))((ekt_buf_t)(addrs)));
 MERCURY_GEN_PROC(query_addrs_in_t, ((uint32_t)(start))((uint32_t)(end)));
 MERCURY_GEN_PROC(tell_in_t, ((uint32_t)(type_id))((ekt_buf_t)(data)));
+MERCURY_GEN_PROC(query_status_in_t, ((hg_string_t)(name))((uint32_t)(flag)));
