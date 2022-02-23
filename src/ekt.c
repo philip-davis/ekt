@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
@@ -18,6 +19,19 @@
 #include "ekt_types.h"
 
 #define EKT_FILE_SUFFIX ".ekt"
+
+#define DEBUG_OUT(...)                                                         \
+    do {                                                                       \
+        if(ekth->f_debug) {                                                    \
+            char *dbgpfx, *dbgmsg;                                             \
+            asprintf(&dbgpfx, "Rank %i: %s, line %i (%s):", ekth->rank,        \
+                     __FILE__, __LINE__, __func__);                            \
+            asprintf(&dbgmsg, __VA_ARGS__);                                    \
+            fprintf(stderr, "%s %s", dbgpfx, dbgmsg);                          \
+            free(dbgpfx);                                                      \
+            free(dbgmsg);                                                      \
+        }                                                                      \
+    } while(0);
 
 int ekt_handle_announce(struct ekt_id *ekt_handle, int type_id, void *data);
 
@@ -340,6 +354,9 @@ static void query_addrs_rpc(hg_handle_t handle)
     hret = margo_get_input(handle, &in);
     MPI_Comm_rank(ekth->collector_comm, &crank);
 
+    DEBUG_OUT("received address request for ranks %i through %i\n", in.start,
+              in.end);
+
     if(map_to_collector(in.start, ekth->app_size) != crank ||
        map_to_collector(in.end, ekth->app_size) != crank) {
         fprintf(stderr,
@@ -349,21 +366,31 @@ static void query_addrs_rpc(hg_handle_t handle)
     }
 
     map_from_collector(crank, ekth->app_size, &mystart, &myend);
-    if(map_to_collector(in.end + 1, ekth->app_size) == crank) {
-        out.len = ekth->gather_addrs[(in.end + 1) - mystart] -
-                  ekth->gather_addrs[in.start - mystart];
-    } else {
+    DEBUG_OUT("my zone of responsibility is from rank %i to %i, and my total "
+              "gather buffer is %i bytes\n",
+              mystart, myend, ekth->gather_addrs_len);
+
+    if(in.end == myend) {
         out.len =
             ekth->gather_addrs_len -
             (ekth->gather_addrs[in.start - mystart] - ekth->gather_addrs[0]);
+    } else {
+        out.len = ekth->gather_addrs[(in.end + 1) - mystart] -
+                  ekth->gather_addrs[in.start - mystart];
     }
+
+    DEBUG_OUT("length of response is %zi\n", out.len);
 
     out.buf = malloc(out.len);
     memcpy(out.buf, ekth->gather_addrs[in.start - mystart], out.len);
+    DEBUG_OUT("response prepared\n");
     margo_respond(handle, &out);
+    DEBUG_OUT("sent response\n");
 
     margo_free_input(handle, &in);
     margo_destroy(handle);
+    DEBUG_OUT("completed address query\n");
+
     free(out.buf);
 }
 DEFINE_MARGO_RPC_HANDLER(query_addrs_rpc)
@@ -437,20 +464,31 @@ static void query_status_rpc(hg_handle_t handle)
     hret = margo_get_input(handle, &in);
     wait = in.flag;
 
+    DEBUG_OUT("received inquiry about peer group '%s' with wait = %i\n",
+              in.name, wait);
+
     ABT_mutex_lock(ekth->peer_mutex);
     do {
+        DEBUG_OUT("checking whether we have peer already registered...\n");
         for(peer = ekth->peers; peer; peer = peer->next) {
+            DEBUG_OUT("found '%s'\n", peer->name);
             if(strcmp(in.name, peer->name) == 0) {
+                DEBUG_OUT("matched!\n");
                 out = 1;
                 break;
             }
         }
+        if(ekth->f_debug && !out) {
+            DEBUG_OUT("didn't find existing mathing peer group.\n");
+        }
         if(!out && wait) {
+            DEBUG_OUT("wait flag is set...waiting for peer condition.\n");
             ABT_cond_wait(ekth->peer_cond, ekth->peer_mutex);
         }
     } while(!out && wait);
     ABT_mutex_unlock(ekth->peer_mutex);
 
+    DEBUG_OUT("responding\n");
     margo_respond(handle, &out);
     margo_free_input(handle, &in);
     margo_destroy(handle);
@@ -460,12 +498,13 @@ DEFINE_MARGO_RPC_HANDLER(query_status_rpc)
 int ekt_init(struct ekt_id **ekt_handle, const char *app_name, MPI_Comm comm,
              margo_instance_id mid)
 {
+    const char *envdebug = getenv("EKT_DEBUG");
     struct ekt_id *ekth;
     hg_bool_t flag;
     hg_id_t id;
     int i;
 
-    ekth = malloc(sizeof(**ekt_handle));
+    ekth = calloc(1, sizeof(*ekth));
 
     for(i = 0; i < EKT_WATCH_HASH_SIZE; i++) {
         ekth->watch_cbs[i] = NULL;
@@ -476,6 +515,13 @@ int ekt_init(struct ekt_id **ekt_handle, const char *app_name, MPI_Comm comm,
     MPI_Comm_dup(comm, &ekth->comm);
     MPI_Comm_rank(comm, &ekth->rank);
     MPI_Comm_size(comm, &ekth->app_size);
+
+    if(envdebug) {
+        ekth->f_debug = 1;
+        if(ekth->rank == 0) {
+            DEBUG_OUT("enabled EKT debugging.\n");
+        }
+    }
 
     ekth->mid = mid;
 
@@ -581,6 +627,37 @@ static void map_from_collector(int collector, int size, int *start, int *end)
     }
 }
 
+static void part_range(int len, int parts, int part, int *start, int *end)
+{
+    int div = len / parts;
+    int rem = len % parts;
+
+    if(part < rem) {
+        *start = (div + 1) * part;
+        *end = *start + div;
+    } else {
+        *start = ((div + 1) * rem) + (part - rem) * div;
+        *end = *start + div - 1;
+    }
+}
+
+static int *part_map(int len, int parts)
+{
+    int *map = malloc(sizeof(*map) * parts);
+    int div = len / parts;
+    int rem = len % parts;
+    int i;
+
+    for(i = 0; i < parts; i++) {
+        map[i] = div;
+        if(i < rem)
+            map[i]++;
+    }
+
+    return (map);
+}
+
+// bugged
 static int *partition_seq(int seq_size, int part_count)
 {
     int div, rem, str, i;
@@ -698,6 +775,9 @@ static int query_addrs(struct ekt_id *ekth, char *tgt_addr, int lower,
     }
 
     *addrs_len = out.len;
+    DEBUG_OUT("length of addresses of peer %i through %i, asked of %s, is %zi "
+              "bytes.\n",
+              lower, upper, tgt_addr, out.len);
     *addrs = malloc(out.len);
     memcpy(*addrs, out.buf, out.len);
 
@@ -742,46 +822,6 @@ static int get_peer_caddr_count(struct ekt_id *ekth, int peer_size)
     return (count);
 }
 
-static void get_peer_addrs(struct ekt_id *ekth, int peer_size,
-                           int pcoll_addr_count, char **pcoll_addrs,
-                           int *peer_buf_len, char **addr_list_buf)
-{
-    int start, end;
-    int coffset;
-    int qstart, qend;
-    char **peer_addrs;
-    char *res_addrs[pcoll_addr_count];
-    int res_addr_len[pcoll_addr_count];
-    int res_addr_count[pcoll_addr_count];
-    int cpeer;
-    int i;
-
-    get_gather_peer_range(ekth, peer_size, &start, &end);
-
-    *peer_buf_len = 0;
-    coffset = map_to_collector(start, peer_size);
-    for(i = 0; i < pcoll_addr_count; i++) {
-        cpeer = coffset + i;
-        map_from_collector(cpeer, peer_size, &qstart, &qend);
-        if(qstart < start) {
-            qstart = start;
-        }
-        if(qend > end) {
-            qend = end;
-        }
-        query_addrs(ekth, pcoll_addrs[i], qstart, qend, &res_addr_len[i],
-                    &res_addrs[i]);
-        *peer_buf_len += res_addr_len[i];
-    }
-
-    *addr_list_buf = malloc(*peer_buf_len);
-    for(i = 0; i < pcoll_addr_count; i++) {
-        memcpy(*addr_list_buf, res_addrs[i], res_addr_len[i]);
-        addr_list_buf += res_addr_len[i];
-        free(res_addrs[i]);
-    }
-}
-
 static void deserialize_str_list(char *str, int count, char ***listp)
 {
     char **list;
@@ -797,64 +837,12 @@ static void deserialize_str_list(char *str, int count, char ***listp)
     }
 }
 
-static void distribute_peers(struct ekt_id *ekth, char **peer_addrs,
-                             int peer_caddr_count, int *local_pcount,
-                             char ***my_peers)
-{
-    int grank, gsize;
-    int offset;
-    int *sendcounts;
-    int *displs;
-    int local_psize;
-    char *my_peers_buf;
-    int *pmap;
-    int first = 0;
-    void *scatter_buf;
-    int i, j;
-
-    MPI_Comm_rank(ekth->gather_comm, &grank);
-    MPI_Comm_size(ekth->gather_comm, &gsize);
-
-    pmap = partition_seq(peer_caddr_count, gsize);
-    *local_pcount = pmap[grank];
-    if(grank == 0) {
-        scatter_buf = *peer_addrs;
-        offset = ekth->rank;
-        pmap = partition_seq(peer_caddr_count, ekth->gather_count);
-        displs = malloc(sizeof(*displs) * ekth->gather_count);
-        sendcounts = calloc(sizeof(*sendcounts), ekth->gather_count);
-        for(i = 0; i < ekth->gather_count; i++) {
-            displs[i] = peer_addrs[first] - *peer_addrs;
-            for(j = first; j < first + pmap[i]; j++) {
-                sendcounts[i] += strlen(peer_addrs[j]) + 1;
-            }
-            first += pmap[i];
-        }
-    }
-    MPI_Scatter(sendcounts, 1, MPI_INT, &local_psize, 1, MPI_INT, 0,
-                ekth->gather_comm);
-    my_peers_buf = malloc(local_psize);
-    MPI_Scatterv(scatter_buf, sendcounts, displs, MPI_CHAR, my_peers_buf,
-                 local_psize, MPI_CHAR, 0, ekth->gather_comm);
-    deserialize_str_list(my_peers_buf, *local_pcount, my_peers);
-    int detected_count = 0;
-    for(i = 0; i < local_psize; i++) {
-        if(my_peers_buf[i] == '\0')
-            detected_count++;
-    }
-    if(detected_count != *local_pcount) {
-        fprintf(stderr,
-                "ERROR: rank %d received %d addrs, expected %d addrs.\n",
-                ekth->rank, detected_count, *local_pcount);
-    }
-}
-
 void add_peer(struct ekt_id *ekth, const char *name, int size, int addr_count,
               char **addrs)
 {
     struct ekt_peer *peer, **peerp;
 
-    ABT_mutex_lock(ekth->peer_mutex);
+    DEBUG_OUT("adding peer group '%s', with peer size %i\n", name, size);
     peerp = &ekth->peers;
     while(*peerp) {
         if(strcmp((*peerp)->name, name) == 0) {
@@ -881,98 +869,240 @@ void add_peer(struct ekt_id *ekth, const char *name, int size, int addr_count,
     }
 }
 
-int ekt_connect(struct ekt_id *ekth, const char *peer)
+static int peer_hello(struct ekt_id *ekth, const char *boot_addr, char **addrs,
+                      int *addrs_len)
 {
-    hg_addr_t server_addr;
-    hg_handle_t handle;
-    hg_return_t hret;
     hello_in_t hin;
     hello_out_t hout;
     int peer_size;
+    hg_addr_t server_addr;
+    hg_handle_t handle;
+    hg_return_t hret;
+
+    hin.name = ekth->app_name;
+    hin.size = ekth->app_size;
+    margo_addr_lookup(ekth->mid, boot_addr, &server_addr);
+
+    hret = margo_create(ekth->mid, server_addr, ekth->hello_id, &handle);
+    if(hret != HG_SUCCESS) {
+        fprintf(stderr, "ERROR: failed to create hello rpc (%d)\n", hret);
+        return (-1);
+    }
+    hret = margo_forward(handle, &hin);
+    if(hret != HG_SUCCESS) {
+        fprintf(stderr, "ERROR: failed to send hello rpc (%d)\n", hret);
+        margo_destroy(handle);
+        return (-1);
+    }
+
+    hret = margo_get_output(handle, &hout);
+    if(hret != HG_SUCCESS) {
+        fprintf(stderr, "ERROR: failed to get status of hello rpc (%d)\n",
+                hret);
+        margo_destroy(handle);
+        return (-1);
+    }
+
+    *addrs = malloc(hout.addrs.len);
+    *addrs_len = hout.addrs.len;
+    memcpy(*addrs, hout.addrs.buf, hout.addrs.len);
+    peer_size = hout.size;
+    margo_free_output(handle, &hout);
+    margo_destroy(handle);
+
+    return (peer_size);
+}
+
+static void get_peer_addrs(struct ekt_id *ekth, int peer_size,
+                           char **pcoll_addrs, int pcoll_count,
+                           char **peer_addrs_buf, int *paddrs_buf_len,
+                           int *paddr_count)
+{
+    int pstart, pend;
+    int cstart, cend, ccount;
+    int qstart, qend;
+    int crank;
+    int *res_len;
+    char **res_bufs;
+    char *paddr_buf_p;
+    int i;
+
+    MPI_Comm_rank(ekth->collector_comm, &crank);
+    part_range(peer_size, ekth->collector_count, crank, &pstart, &pend);
+    *paddr_count = (pend - pstart) + 1;
+    DEBUG_OUT("need peer addresses for peers %i through %i\n", pstart, pend);
+
+    cstart = map_to_collector(pstart, peer_size);
+    cend = map_to_collector(pend, peer_size);
+    DEBUG_OUT("need peer addresses from collector %i through %i\n", cstart,
+              cend);
+    ccount = (cend - cstart) + 1;
+    res_len = malloc(sizeof(*res_len) * ccount);
+    res_bufs = malloc(sizeof(*res_bufs) * ccount);
+
+    *paddrs_buf_len = 0;
+    for(i = 0; i < ccount; i++) {
+        map_from_collector(cstart + i, peer_size, &qstart, &qend);
+        DEBUG_OUT("peer collector %i is responsible for addresses for peer %i "
+                  "through %i\n",
+                  cstart + i, qstart, qend);
+        if(qstart < pstart) {
+            qstart = pstart;
+        }
+        if(qend > pend) {
+            qend = pend;
+        }
+        query_addrs(ekth, pcoll_addrs[cstart + i], qstart, qend, &res_len[i],
+                    &res_bufs[i]);
+        *paddrs_buf_len += res_len[i];
+    }
+
+    DEBUG_OUT("total peer address length is %i\n", *paddrs_buf_len);
+    *peer_addrs_buf = malloc(*paddrs_buf_len);
+    paddr_buf_p = *peer_addrs_buf;
+    for(i = 0; i < ccount; i++) {
+        memcpy(paddr_buf_p, res_bufs[i], res_len[i]);
+        paddr_buf_p += res_len[i];
+        free(res_bufs[i]);
+    }
+    free(res_len);
+    free(res_bufs);
+}
+
+static void distribute_peers(struct ekt_id *ekth, char *paddrs_buf,
+                             int paddrs_buf_len, int paddr_count,
+                             char ***mypaddrs, int *pcount)
+{
+    char **paddrs;
+    int *lengths;
+    int *displs;
+    int *pmap;
+    int start, end;
+    int len;
+    char *peers_buf;
+    int i, j;
+
+    if(ekth->gather_count > 0) {
+        lengths = malloc(sizeof(*lengths) * ekth->gather_count);
+        displs = malloc(sizeof(*displs) * ekth->gather_count);
+        DEBUG_OUT("scattering %i peer addresses among %i gather clients\n",
+                  paddr_count, ekth->gather_count);
+        deserialize_str_list(paddrs_buf, paddr_count, &paddrs);
+        pmap = part_map(paddr_count, ekth->gather_count);
+        for(i = 0; i < ekth->gather_count; i++) {
+            part_range(paddr_count, ekth->gather_count, i, &start, &end);
+            DEBUG_OUT("gather client %i gets peer %i through %i\n", i, start,
+                      end);
+            if(end >= start) {
+                displs[i] = paddrs[start] - paddrs_buf;
+            } else {
+                displs[i] = paddrs_buf_len;
+            }
+            DEBUG_OUT("displacement for %i is %i\n", i, displs[i]);
+            if(i > 0) {
+                lengths[i - 1] = displs[i] - displs[i - 1];
+                DEBUG_OUT("length for %i is %i\n", i - 1, lengths[i - 1]);
+            }
+        }
+        lengths[ekth->gather_count - 1] =
+            paddrs_buf_len - displs[ekth->gather_count - 1];
+        DEBUG_OUT("last length is %i\n", lengths[ekth->gather_count - 1]);
+    }
+    DEBUG_OUT("scattering lengths\n");
+    MPI_Scatter(lengths, 1, MPI_INT, &len, 1, MPI_INT, 0, ekth->gather_comm);
+    DEBUG_OUT("my length is %i\n", len);
+    DEBUG_OUT("scattering counts\n");
+    MPI_Scatter(pmap, 1, MPI_INT, pcount, 1, MPI_INT, 0, ekth->gather_comm);
+    DEBUG_OUT("my pcount is %i\n", *pcount);
+    peers_buf = malloc(len);
+    DEBUG_OUT("scattering addresses\n");
+    MPI_Scatterv(paddrs_buf, lengths, displs, MPI_BYTE, peers_buf, len,
+                 MPI_BYTE, 0, ekth->gather_comm);
+
+    deserialize_str_list(peers_buf, *pcount, mypaddrs);
+    if(ekth->f_debug) {
+        for(i = 0; i < *pcount; i++) {
+            DEBUG_OUT("received peer %i has address %s\n", i, (*mypaddrs)[i]);
+        }
+    }
+
+    if(ekth->gather_count > 0) {
+        free(paddrs);
+        free(lengths);
+        free(displs);
+        free(pmap);
+    }
+}
+
+int ekt_connect(struct ekt_id *ekth, const char *peer)
+{
     char *boot_addr;
-    int peer_collector_count;
-    char **peer_collector_addrs;
-    int pcoll_addr_count;
-    int pcoll_size;
-    int peer_addr_buf_len;
-    char *peer_addr_buf;
+    int peer_size;
     char *pcoll_addrs_buf;
+    int pcoll_addrs_buf_len;
+    int peer_collector_count;
     char **pcoll_addrs;
-    char **peer_addrs;
-    int peer_caddr_count;
-    int my_pcount;
-    char **my_peers;
+    char *peer_addrs_buf;
+    int peer_addrs_buf_len;
+    int paddr_count;
+    int pcount;
+    char **paddrs;
 
     if(ekth->rank == 0) {
         // rank 0 reads bootstrapping conf
         if(read_bootstrap_conf(ekth, peer, &boot_addr) < 0) {
-            return (-1);
-        }
-
-        /* rank 0 contacts rank 0 of peer:
+            fprintf(stderr, "ERROR: could not read peer bootstrap file.\n");
+            peer_size = -1;
+        } else {
+            /* rank 0 contacts rank 0 of peer:
                 send greeting rpc
                 response is peer's collector_addrs and app size
-        */
-        hin.name = ekth->app_name;
-        hin.size = ekth->app_size;
-        margo_addr_lookup(ekth->mid, boot_addr, &server_addr);
-        hret = margo_create(ekth->mid, server_addr, ekth->hello_id, &handle);
-        if(hret != HG_SUCCESS) {
-            fprintf(stderr, "ERROR: failed to create hello rpc (%d)\n", hret);
-            return (-1);
+            */
+            peer_size = peer_hello(ekth, boot_addr, &pcoll_addrs_buf,
+                                   &pcoll_addrs_buf_len);
+            free(boot_addr);
         }
-        hret = margo_forward(handle, &hin);
-        if(hret != HG_SUCCESS) {
-            fprintf(stderr, "ERROR: failed to send hello rpc (%d)\n", hret);
-            margo_destroy(handle);
-            return (-1);
-        }
-
-        hret = margo_get_output(handle, &hout);
-        if(hret != HG_SUCCESS) {
-            fprintf(stderr, "ERROR: failed to get status of hello rpc (%d)\n",
-                    hret);
-            margo_destroy(handle);
-            return (-1);
-        }
-        peer_size = hout.size;
-
-        free(boot_addr);
     }
-
-    // rank 0 broadcasts peer app size
-    peer_size = hout.size;
+    // rank 0 broadcasts peer collector addresses to own collectors
     MPI_Bcast(&peer_size, 1, MPI_INT, 0, ekth->comm);
+    if(peer_size == -1) {
+        return (-1);
+    }
 
     peer_collector_count = get_collector_count(peer_size);
-    peer_caddr_count = get_peer_caddr_count(ekth, peer_size);
 
     if(ekth->gather_count > 0) {
-        if(ekth->rank == 0) {
-            deserialize_str_list(hout.addrs.buf, peer_collector_count,
-                                 &peer_collector_addrs);
+        MPI_Bcast(&pcoll_addrs_buf_len, 1, MPI_INT, 0, ekth->collector_comm);
+        if(ekth->rank != 0) {
+            pcoll_addrs_buf = malloc(pcoll_addrs_buf_len);
         }
-        // rank 0 scatters collector addresses as necessary
-        distribute_g2c(ekth, peer_size, peer_collector_addrs, &pcoll_addr_count,
-                       &pcoll_addrs_buf);
-        deserialize_str_list(pcoll_addrs_buf, pcoll_addr_count, &pcoll_addrs);
-        get_peer_addrs(ekth, peer_size, pcoll_addr_count, pcoll_addrs,
-                       &peer_addr_buf_len, &peer_addr_buf);
-        peer_caddr_count = get_peer_caddr_count(ekth, peer_size);
-        deserialize_str_list(peer_addr_buf, peer_caddr_count, &peer_addrs);
+        MPI_Bcast(pcoll_addrs_buf, pcoll_addrs_buf_len, MPI_BYTE, 0,
+                  ekth->collector_comm);
+        deserialize_str_list(pcoll_addrs_buf, peer_collector_count,
+                             &pcoll_addrs);
+        // collectors get peer addresses
+        get_peer_addrs(ekth, peer_size, pcoll_addrs, peer_collector_count,
+                       &peer_addrs_buf, &peer_addrs_buf_len, &paddr_count);
     }
 
-    /* all contact peer ranks to buildup mesh
-        ask peer collector nodes for outgoing peer rank addresses
-        local collector nodes provide addresses to incoming peer ranks
-    */
-    distribute_peers(ekth, peer_addrs, peer_caddr_count, &my_pcount, &my_peers);
+    // distribute peer addresses
+    distribute_peers(ekth, peer_addrs_buf, peer_addrs_buf_len, paddr_count,
+                     &paddrs, &pcount);
 
+    if(ekth->gather_count > 0) {
+        free(pcoll_addrs_buf);
+    }
+
+    // install peer
     ABT_mutex_lock(ekth->peer_mutex);
-    add_peer(ekth, peer, peer_size, my_pcount, my_peers);
+    DEBUG_OUT("installing peer\n");
+    add_peer(ekth, peer, peer_size, pcount, paddrs);
+    DEBUG_OUT("waiting for everyone else\n");
     MPI_Barrier(ekth->comm);
     ABT_cond_broadcast(ekth->peer_cond);
     ABT_mutex_unlock(ekth->peer_mutex);
+
+    DEBUG_OUT("finished\n");
 
     return (0);
 }
@@ -1129,7 +1259,7 @@ int ekt_is_bidi(struct ekt_id *ekth, const char *name, int wait)
             margo_addr_lookup(ekth->mid, peer->peer_addrs[0], &peer_addr);
             ABT_mutex_unlock(ekth->peer_mutex);
             margo_create(ekth->mid, peer_addr, ekth->query_status_id, &handle);
-            in.name = strdup(name);
+            in.name = ekth->app_name;
             in.flag = wait;
             margo_forward(handle, &in);
             margo_get_output(handle, &out);

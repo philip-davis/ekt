@@ -44,6 +44,7 @@ struct ekt_id {
     int collector_count;
     char *collector_addrs;
     int collector_addrs_len;
+    int f_debug;
 
     struct ekt_peer *peers;
     ABT_mutex peer_mutex;
