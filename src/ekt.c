@@ -1273,3 +1273,20 @@ int ekt_is_bidi(struct ekt_id *ekth, const char *name, int wait)
             name);
     return (0);
 }
+
+int ekt_peer_size(struct ekt_id *ekth, const char *name)
+{
+    struct ekt_peer *peer;
+    int size = -1;
+
+    ABT_mutex_lock(ekth->peer_mutex);
+    for(peer = ekth->peers; peer; peer = peer->next) {
+        if(strcmp(peer->name, name) == 0) {
+            size = peer->size;
+            break;
+        }
+    }
+    ABT_mutex_unlock(ekth->peer_mutex);
+
+    return(size);
+}
