@@ -1288,5 +1288,5 @@ int ekt_peer_size(struct ekt_id *ekth, const char *name)
     }
     ABT_mutex_unlock(ekth->peer_mutex);
 
-    return(size);
+    return (size);
 }

@@ -29,6 +29,8 @@ int ekt_tell(struct ekt_id *ekt_handle, const char *target,
 
 int ekt_is_bidi(struct ekt_id *ekth, const char *name, int wait);
 
+int ekt_peer_size(struct ekt_id *ekth, const char *name);
+
 int ekt_register(struct ekt_id *ekt_handle, uint32_t type_id, serdes_fn ser,
                  serdes_fn des, void *arg, struct ekt_type **type);
 
