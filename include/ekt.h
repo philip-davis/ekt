@@ -18,6 +18,8 @@ typedef struct ekt_peer *ekt_peer;
 int ekt_init(struct ekt_id **ekt_handle, const char *app_name, MPI_Comm comm,
              margo_instance_id mid);
 
+void ekt_enable(struct ekt_id *ekt_handle);
+
 int ekt_fini(struct ekt_id **ekt_handle);
 
 int ekt_connect(struct ekt_id *ekt_handle, const char *peer);

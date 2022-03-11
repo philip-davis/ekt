@@ -50,6 +50,10 @@ struct ekt_id {
     ABT_mutex peer_mutex;
     ABT_cond peer_cond;
 
+    int f_ready;
+    ABT_mutex ready_mutex;
+    ABT_cond ready_cond;
+
     // margo rpc handles
     hg_id_t hello_id;
     hg_id_t query_addrs_id;

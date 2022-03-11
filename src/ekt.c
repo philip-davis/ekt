@@ -488,6 +488,14 @@ static void query_status_rpc(hg_handle_t handle)
     } while(!out && wait);
     ABT_mutex_unlock(ekth->peer_mutex);
 
+    DEBUG_OUT("we have the peer registered...check if we are ready for messages\n");
+    ABT_mutex_lock(ekth->ready_mutex);
+    if(wait) {
+        while(!ekth->f_ready) {
+            ABT_cond_wait(ekth->ready_cond, ekth->ready_mutex);
+        }
+    }
+    ABT_mutex_unlock(ekth->ready_mutex);
     DEBUG_OUT("responding\n");
     margo_respond(handle, &out);
     margo_free_input(handle, &in);
@@ -559,6 +567,9 @@ int ekt_init(struct ekt_id **ekt_handle, const char *app_name, MPI_Comm comm,
     ABT_cond_create(&ekth->peer_cond);
     ekth->peers = NULL;
 
+    ABT_mutex_create(&ekth->ready_mutex);
+    ABT_cond_create(&ekth->ready_cond);
+
     if(ekth->rank == 0) {
         write_bootstrap_conf(ekth);
     }
@@ -566,6 +577,15 @@ int ekt_init(struct ekt_id **ekt_handle, const char *app_name, MPI_Comm comm,
     *ekt_handle = ekth;
 
     return (0);
+}
+
+void ekt_enable(struct ekt_id *ekth)
+{
+    ABT_mutex_lock(ekth->ready_mutex);
+    ekth->f_ready = 1;
+    ABT_cond_broadcast(ekth->ready_cond);
+    ABT_mutex_unlock(ekth->ready_mutex);
+    DEBUG_OUT("ready for messages\n");
 }
 
 int ekt_fini(struct ekt_id **ekt_handle)
