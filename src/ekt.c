@@ -1273,6 +1273,8 @@ int ekt_is_bidi(struct ekt_id *ekth, const char *name, int wait)
     uint32_t out;
     hg_return_t hret;
 
+    DEBUG_OUT("Asking '%s' if they are connected to '%s'\n", name, ekth->app_name);
+
     ABT_mutex_lock(ekth->peer_mutex);
     for(peer = ekth->peers; peer; peer = peer->next) {
         if(strcmp(peer->name, name) == 0) {
@@ -1284,7 +1286,6 @@ int ekt_is_bidi(struct ekt_id *ekth, const char *name, int wait)
             margo_forward(handle, &in);
             margo_get_output(handle, &out);
             margo_destroy(handle);
-            free(in.name);
             return (out);
         }
     }
