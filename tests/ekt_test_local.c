@@ -4,6 +4,8 @@
 
 #include <mpi.h>
 
+#include <stdlib.h>
+
 struct my_data {
     uint32_t id;
     int64_t value;

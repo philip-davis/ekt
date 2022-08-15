@@ -70,7 +70,7 @@ static int gather_addresses(struct ekt_id *ekth)
 {
     MPI_Comm gather_comm;
     MPI_Comm collector_comm;
-    int collector_count, per_collector;
+    int collector_count;
     int grank, gsize, crank, csize;
     int *addr_sizes = NULL;
     int *size_psum = NULL;
@@ -83,9 +83,8 @@ static int gather_addresses(struct ekt_id *ekth)
     while(collector_count * collector_count < ekth->app_size) {
         collector_count++;
     }
-    per_collector = ekth->app_size / collector_count;
 
-    MPI_Comm_split(ekth->comm, ekth->rank / per_collector, ekth->rank,
+    MPI_Comm_split(ekth->comm, ekth->rank / collector_count, ekth->rank,
                    &gather_comm);
     MPI_Comm_rank(gather_comm, &grank);
     MPI_Comm_size(gather_comm, &gsize);
@@ -128,7 +127,7 @@ static int gather_addresses(struct ekt_id *ekth)
 
     // Maybe a better MPI operation for this...we only care about the ranks that
     // are gathering.
-    MPI_Comm_split(ekth->comm, ekth->rank % per_collector, ekth->rank,
+    MPI_Comm_split(ekth->comm, ekth->rank % collector_count, ekth->rank,
                    &collector_comm);
     if(grank == 0) {
         MPI_Comm_rank(collector_comm, &crank);
@@ -157,6 +156,8 @@ static int gather_addresses(struct ekt_id *ekth)
             ekth->collector_addrs_len = addr_buf_size;
         }
     }
+
+    DEBUG_OUT("gather_count = %i, collector_count = %i\n", ekth->gather_count, ekth->collector_count);
 
     MPI_Comm_dup(gather_comm, &ekth->gather_comm);
     MPI_Comm_dup(collector_comm, &ekth->collector_comm);
@@ -632,16 +633,15 @@ static int map_to_collector(int rank, int size)
 {
     int count = get_collector_count(size);
 
-    return (rank / (size / count));
+    return (rank / count);
 }
 
 static void map_from_collector(int collector, int size, int *start, int *end)
 {
     int count = get_collector_count(size);
-    int stride = size / count;
 
-    *start = stride * collector;
-    *end = *start + (stride - 1);
+    *start = count * collector;
+    *end = *start + (count - 1);
     if(*end >= size) {
         *end = size - 1;
     }

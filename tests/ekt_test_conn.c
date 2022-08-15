@@ -3,6 +3,7 @@
 #include <margo.h>
 
 #include <inttypes.h>
+#include <stdlib.h>
 #include <mpi.h>
 
 struct my_data {
@@ -76,6 +77,8 @@ int main(int argc, char **argv)
     char *app_name;
     char *peer_name = NULL;
     struct wait_file wait = {0};
+    int rank;
+    hg_return_t hret;
 
     if(argc < 2 || argc > 3) {
         printf("Usage: ekt_test_conn <app_name> <peer_name>\n");
@@ -86,7 +89,7 @@ int main(int argc, char **argv)
     if(argc > 2) {
         peer_name = argv[2];
     }
-
+    margo_set_environment(NULL);
     ABT_init(0, NULL);
 
     ABT_mutex_create(&wait.wait_mtx);
@@ -95,6 +98,7 @@ int main(int argc, char **argv)
     wait.check_data = check_data;
 
     MPI_Init(NULL, NULL);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     mid = margo_init("sm", MARGO_SERVER_MODE, 1, 1);
 
     ekt_init(&ekt_h, app_name, MPI_COMM_WORLD, mid);
@@ -115,9 +119,15 @@ int main(int argc, char **argv)
     ekt_deregister(&my_type);
     ekt_fini(&ekt_h);
 
+    int nstreams;
+    ABT_xstream_get_num(&nstreams);
+    fprintf(stderr, "pre rank %i, nstreams %i\n", rank, nstreams);
     margo_finalize(mid);
     MPI_Finalize();
 
+    ABT_xstream_get_num(&nstreams);
+    fprintf(stderr, "post rank %i, nstreams %i\n", rank, nstreams);
+        
     ABT_finalize();
 
     return (0);
