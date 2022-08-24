@@ -66,7 +66,7 @@ static void query_status_rpc(hg_handle_t h);
 
 static int map_to_collector(int rank, int size);
 
-static int gather_addresses(struct ekt_id *ekth)
+int gather_addresses(struct ekt_id *ekth)
 {
     MPI_Comm gather_comm;
     MPI_Comm collector_comm;
@@ -163,6 +163,8 @@ static int gather_addresses(struct ekt_id *ekth)
     MPI_Comm_dup(collector_comm, &ekth->collector_comm);
     MPI_Comm_free(&gather_comm);
     MPI_Comm_free(&collector_comm);
+
+    return(0);
 }
 
 char *get_conf_name(const char *app_name)
@@ -220,6 +222,8 @@ static int write_bootstrap_conf(struct ekt_id *ekth)
 
     close(file);
     free(fname);
+
+    return(0);
 }
 
 static int read_bootstrap_conf(struct ekt_id *ekth, const char *peer,
@@ -287,6 +291,8 @@ static int read_bootstrap_conf(struct ekt_id *ekth, const char *peer,
 
     close(file);
     free(fname);
+
+    return(0);
 }
 
 static void delete_bootstrap_conf(struct ekt_id *ekth)
@@ -616,6 +622,8 @@ int ekt_fini(struct ekt_id **ekt_handle)
 
     free(ekth);
     *ekt_handle = NULL;
+
+    return(0);
 }
 
 static int get_collector_count(int app_size)
@@ -1210,6 +1218,8 @@ static int ekt_tell_peer(struct ekt_id *ekth, struct ekt_peer *peer,
         }
         margo_destroy(handle);
     }
+
+    return(0);
 }
 
 int ekt_tell(struct ekt_id *ekth, const char *target, struct ekt_type *type,
@@ -1262,6 +1272,8 @@ int ekt_deregister(struct ekt_type **type)
 {
     free(*type);
     *type = NULL;
+
+    return(0);
 }
 
 int ekt_is_bidi(struct ekt_id *ekth, const char *name, int wait)
