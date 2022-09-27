@@ -6,6 +6,9 @@ set (ekt-pkg "share/cmake/ekt")
 
 set (ekt-vers "${ekt_VERSION_MAJOR}.${ekt_VERSION_MINOR}")
 
+#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer -fsanitize=address")
+#set(CMAKE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} -fno-omit-frame-pointer -fsanitize=address")
+
 add_library(ekt ekt.c)
 target_link_libraries (ekt margo
 		${MPI_C_LIBRARIES}
