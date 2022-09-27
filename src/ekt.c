@@ -1209,6 +1209,7 @@ static int ekt_tell_peer(struct ekt_id *ekth, struct ekt_peer *peer,
     hg_return_t hret;
     int i;
 
+    DEBUG_OUT("telling peer '%s'\n", peer->name);
     if(!type) {
         fprintf(stderr, "ERROR: bad type passed to ekt_tell.\n");
         return (-1);
@@ -1217,6 +1218,7 @@ static int ekt_tell_peer(struct ekt_id *ekth, struct ekt_peer *peer,
     in.data.len = data_size;
     in.data.buf = data;
 
+    DEBUG_OUT("telling %zu ranks of '%s'\n", peer->rank_count, peer->name);
     for(i = 0; i < peer->rank_count; i++) {
         hg_handle_t handle;
         margo_request req;
@@ -1235,6 +1237,7 @@ static int ekt_tell_peer(struct ekt_id *ekth, struct ekt_peer *peer,
             return (-1);
         }
         margo_destroy(handle);
+        DEBUG_OUT("told rank %i of %zu of '%s'\n", i, peer->rank_count, peer->name);
     }
 
     return(0);
@@ -1246,6 +1249,8 @@ int ekt_tell(struct ekt_id *ekth, const char *target, struct ekt_type *type,
     struct ekt_peer *peer;
     int data_size;
     void *ser_data = NULL;
+
+    DEBUG_OUT("telling type %i\n", type->type_id); 
 
     // transmit to all other ekt clients
     peer = ekth->peers;
