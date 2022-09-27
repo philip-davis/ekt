@@ -20,6 +20,12 @@ target_include_directories (ekt PUBLIC $<INSTALL_INTERFACE:include>
 target_include_directories (ekt BEFORE PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>)
 
+if(_apex_FOUND)
+    add_definitions(-DUSE_APEX)
+    target_link_libraries(ekt apex)
+    set(NEED_APEX "apex")
+endif()
+
 # for shared libs, establish the lib version
 set_target_properties (ekt
     PROPERTIES VERSION ${ekt_VERSION}

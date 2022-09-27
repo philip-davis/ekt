@@ -10,6 +10,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <apex.h>
+
 #include <abt.h>
 #include <margo.h>
 
@@ -19,6 +21,20 @@
 #include "ekt_types.h"
 
 #define EKT_FILE_SUFFIX ".ekt"
+
+#ifdef USE_APEX
+#include <apex.h>
+#define APEX_FUNC_TIMER_START(fn)                                              \
+    apex_profiler_handle profiler0 = apex_start(APEX_FUNCTION_ADDRESS, &fn);
+#define APEX_NAME_TIMER_START(num, name)                                       \
+    apex_profiler_handle profiler##num = apex_start(APEX_NAME_STRING, name);
+#define APEX_TIMER_STOP(num) apex_stop(profiler##num);
+#else
+#define APEX_FUNC_TIMER_START(fn) (void)0;
+#define APEX_NAME_TIMER_START(num, name) (void)0;
+#define APEX_TIMER_STOP(num) (void)0;
+#endif
+
 
 #define DEBUG_OUT(...)                                                         \
     do {                                                                       \
@@ -66,7 +82,7 @@ static void query_status_rpc(hg_handle_t h);
 
 static int map_to_collector(int rank, int size);
 
-static int gather_addresses(struct ekt_id *ekth)
+int gather_addresses(struct ekt_id *ekth)
 {
     MPI_Comm gather_comm;
     MPI_Comm collector_comm;
@@ -163,6 +179,8 @@ static int gather_addresses(struct ekt_id *ekth)
     MPI_Comm_dup(collector_comm, &ekth->collector_comm);
     MPI_Comm_free(&gather_comm);
     MPI_Comm_free(&collector_comm);
+
+    return(0);
 }
 
 char *get_conf_name(const char *app_name)
@@ -220,6 +238,8 @@ static int write_bootstrap_conf(struct ekt_id *ekth)
 
     close(file);
     free(fname);
+
+    return(0);
 }
 
 static int read_bootstrap_conf(struct ekt_id *ekth, const char *peer,
@@ -287,6 +307,8 @@ static int read_bootstrap_conf(struct ekt_id *ekth, const char *peer,
 
     close(file);
     free(fname);
+
+    return(0);
 }
 
 static void delete_bootstrap_conf(struct ekt_id *ekth)
@@ -432,6 +454,7 @@ static void tell_rpc(hg_handle_t handle)
     void *data;
     hg_return_t hret;
 
+    APEX_NAME_TIMER_START(0, "tell_rpc");
     mid = margo_hg_handle_get_instance(handle);
     info = margo_get_info(handle);
     ekth = (struct ekt_id *)margo_registered_data(mid, info->id);
@@ -445,6 +468,7 @@ static void tell_rpc(hg_handle_t handle)
 
     margo_free_input(handle, &in);
     margo_destroy(handle);
+    APEX_TIMER_STOP(0);
 }
 DEFINE_MARGO_RPC_HANDLER(tell_rpc)
 
@@ -616,6 +640,8 @@ int ekt_fini(struct ekt_id **ekt_handle)
 
     free(ekth);
     *ekt_handle = NULL;
+
+    return(0);
 }
 
 static int get_collector_count(int app_size)
@@ -1183,6 +1209,7 @@ static int ekt_tell_peer(struct ekt_id *ekth, struct ekt_peer *peer,
     hg_return_t hret;
     int i;
 
+    DEBUG_OUT("telling peer '%s'\n", peer->name);
     if(!type) {
         fprintf(stderr, "ERROR: bad type passed to ekt_tell.\n");
         return (-1);
@@ -1191,6 +1218,7 @@ static int ekt_tell_peer(struct ekt_id *ekth, struct ekt_peer *peer,
     in.data.len = data_size;
     in.data.buf = data;
 
+    DEBUG_OUT("telling %zu ranks of '%s'\n", peer->rank_count, peer->name);
     for(i = 0; i < peer->rank_count; i++) {
         hg_handle_t handle;
         margo_request req;
@@ -1209,7 +1237,10 @@ static int ekt_tell_peer(struct ekt_id *ekth, struct ekt_peer *peer,
             return (-1);
         }
         margo_destroy(handle);
+        DEBUG_OUT("told rank %i of %zu of '%s'\n", i, peer->rank_count, peer->name);
     }
+
+    return(0);
 }
 
 int ekt_tell(struct ekt_id *ekth, const char *target, struct ekt_type *type,
@@ -1218,6 +1249,8 @@ int ekt_tell(struct ekt_id *ekth, const char *target, struct ekt_type *type,
     struct ekt_peer *peer;
     int data_size;
     void *ser_data = NULL;
+
+    DEBUG_OUT("telling type %i\n", type->type_id); 
 
     // transmit to all other ekt clients
     peer = ekth->peers;
@@ -1262,6 +1295,8 @@ int ekt_deregister(struct ekt_type **type)
 {
     free(*type);
     *type = NULL;
+
+    return(0);
 }
 
 int ekt_is_bidi(struct ekt_id *ekth, const char *name, int wait)
