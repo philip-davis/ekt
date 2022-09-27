@@ -10,6 +10,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <apex.h>
+
 #include <abt.h>
 #include <margo.h>
 
@@ -19,6 +21,20 @@
 #include "ekt_types.h"
 
 #define EKT_FILE_SUFFIX ".ekt"
+
+#ifdef USE_APEX
+#include <apex.h>
+#define APEX_FUNC_TIMER_START(fn)                                              \
+    apex_profiler_handle profiler0 = apex_start(APEX_FUNCTION_ADDRESS, &fn);
+#define APEX_NAME_TIMER_START(num, name)                                       \
+    apex_profiler_handle profiler##num = apex_start(APEX_NAME_STRING, name);
+#define APEX_TIMER_STOP(num) apex_stop(profiler##num);
+#else
+#define APEX_FUNC_TIMER_START(fn) (void)0;
+#define APEX_NAME_TIMER_START(num, name) (void)0;
+#define APEX_TIMER_STOP(num) (void)0;
+#endif
+
 
 #define DEBUG_OUT(...)                                                         \
     do {                                                                       \
@@ -438,6 +454,7 @@ static void tell_rpc(hg_handle_t handle)
     void *data;
     hg_return_t hret;
 
+    APEX_NAME_TIMER_START(0, "tell_rpc");
     mid = margo_hg_handle_get_instance(handle);
     info = margo_get_info(handle);
     ekth = (struct ekt_id *)margo_registered_data(mid, info->id);
@@ -451,6 +468,7 @@ static void tell_rpc(hg_handle_t handle)
 
     margo_free_input(handle, &in);
     margo_destroy(handle);
+    APEX_TIMER_STOP(0);
 }
 DEFINE_MARGO_RPC_HANDLER(tell_rpc)
 

@@ -47,6 +47,9 @@ set (BUILD_SHARED_LIBS "OFF" CACHE BOOL "Build a shared library")
 # packages we depend on
 include (xpkg-import)
 xpkg_import_module (margo REQUIRED margo)
+if(${ENABLE_TIMING})
+  xpkg_import_module(apex apex)
+endif()
 
 find_package(MPI COMPONENTS REQUIRED)
 
