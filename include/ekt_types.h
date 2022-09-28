@@ -2,6 +2,8 @@
 #include <mercury_macros.h>
 #include <mercury_proc_string.h>
 
+#include "tell_hash.h"
+
 typedef int (*serdes_fn)(void *, void *, void **);
 typedef int (*watch_fn)(void *, void *);
 
@@ -23,7 +25,10 @@ struct ekt_peer {
     struct ekt_peer *next;
     char *name;
     size_t size;
+    size_t rank_start;
     size_t rank_count;
+    int id;
+    int degree;
     char **peer_addrs;
 };
 
@@ -45,6 +50,8 @@ struct ekt_id {
     char *collector_addrs;
     int collector_addrs_len;
     int f_debug;
+    int next_id;
+    struct tell_hash *thash;
 
     struct ekt_peer *peers;
     ABT_mutex peer_mutex;
@@ -102,7 +109,7 @@ static inline hg_return_t hg_proc_ekt_buf_t(hg_proc_t proc, void *data)
 }
 
 MERCURY_GEN_PROC(hello_in_t, ((hg_string_t)(name))((uint32_t)(size)));
-MERCURY_GEN_PROC(hello_out_t, ((uint32_t)(size))((ekt_buf_t)(addrs)));
+MERCURY_GEN_PROC(hello_out_t, ((uint32_t)(size))((uint32_t)(pid))((ekt_buf_t)(addrs)));
 MERCURY_GEN_PROC(query_addrs_in_t, ((uint32_t)(start))((uint32_t)(end)));
-MERCURY_GEN_PROC(tell_in_t, ((uint32_t)(type_id))((ekt_buf_t)(data)));
+MERCURY_GEN_PROC(tell_in_t, ((uint32_t)(type_id))((uint32_t)(pid))((uint32_t)(degree))((uint32_t)(dst))((ekt_buf_t)(data)));
 MERCURY_GEN_PROC(query_status_in_t, ((hg_string_t)(name))((uint32_t)(flag)));
