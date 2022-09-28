@@ -34,7 +34,6 @@
 #define APEX_TIMER_STOP(num) (void)0;
 #endif
 
-
 #define DEBUG_OUT(...)                                                         \
     do {                                                                       \
         if(ekth->f_debug) {                                                    \
@@ -172,14 +171,15 @@ int gather_addresses(struct ekt_id *ekth)
         }
     }
 
-    DEBUG_OUT("gather_count = %i, collector_count = %i\n", ekth->gather_count, ekth->collector_count);
+    DEBUG_OUT("gather_count = %i, collector_count = %i\n", ekth->gather_count,
+              ekth->collector_count);
 
     MPI_Comm_dup(gather_comm, &ekth->gather_comm);
     MPI_Comm_dup(collector_comm, &ekth->collector_comm);
     MPI_Comm_free(&gather_comm);
     MPI_Comm_free(&collector_comm);
 
-    return(0);
+    return (0);
 }
 
 char *get_conf_name(const char *app_name)
@@ -238,7 +238,7 @@ static int write_bootstrap_conf(struct ekt_id *ekth)
     close(file);
     free(fname);
 
-    return(0);
+    return (0);
 }
 
 static int read_bootstrap_conf(struct ekt_id *ekth, const char *peer,
@@ -307,7 +307,7 @@ static int read_bootstrap_conf(struct ekt_id *ekth, const char *peer,
     close(file);
     free(fname);
 
-    return(0);
+    return (0);
 }
 
 static void delete_bootstrap_conf(struct ekt_id *ekth)
@@ -463,23 +463,31 @@ static void tell_rpc(hg_handle_t handle)
     hret = margo_get_input(handle, &in);
 
     if(in.dst != ekth->rank) {
-        fprintf(stderr, "ERROR: received tell rpc with dst %i, but I am rank %i\n", in.dst, ekth->rank);
+        fprintf(stderr,
+                "ERROR: received tell rpc with dst %i, but I am rank %i\n",
+                in.dst, ekth->rank);
     }
 
     ABT_mutex_lock(ekth->peer_mutex);
-    recv_count = incr_thash_entry(ekth->thash, in.data.buf, in.data.len, in.pid, in.type_id);
+    recv_count = incr_thash_entry(ekth->thash, in.data.buf, in.data.len, in.pid,
+                                  in.type_id);
     ABT_mutex_unlock(ekth->peer_mutex);
     if(recv_count == in.degree) {
-        DEBUG_OUT("received copy %i of identical type %i tell from %i with len %li, doing cb.\n", recv_count, in.type_id, in.pid, in.data.len);
+        DEBUG_OUT("received copy %i of identical type %i tell from %i with len "
+                  "%li, doing cb.\n",
+                  recv_count, in.type_id, in.pid, in.data.len);
         ABT_mutex_unlock(ekth->peer_mutex);
         deser_tell_data(ekth, in.type_id, in.data.buf, &data);
         ekt_handle_announce(ekth, in.type_id, data);
         free(data);
         ABT_mutex_lock(ekth->peer_mutex);
-        delete_thash_entry(ekth->thash, in.data.buf, in.data.len, in.pid, in.type_id);
+        delete_thash_entry(ekth->thash, in.data.buf, in.data.len, in.pid,
+                           in.type_id);
         ABT_mutex_unlock(ekth->peer_mutex);
     } else {
-        DEBUG_OUT("received copy %i of identical type %i tell from %i, waiting for %i, with len %li.\n", recv_count, in.type_id, in.pid, in.degree, in.data.len);
+        DEBUG_OUT("received copy %i of identical type %i tell from %i, waiting "
+                  "for %i, with len %li.\n",
+                  recv_count, in.type_id, in.pid, in.degree, in.data.len);
     }
 
     margo_free_input(handle, &in);
@@ -529,7 +537,8 @@ static void query_status_rpc(hg_handle_t handle)
     } while(!out && wait);
     ABT_mutex_unlock(ekth->peer_mutex);
 
-    DEBUG_OUT("we have the peer registered...check if we are ready for messages\n");
+    DEBUG_OUT(
+        "we have the peer registered...check if we are ready for messages\n");
     ABT_mutex_lock(ekth->ready_mutex);
     if(wait) {
         while(!ekth->f_ready) {
@@ -659,7 +668,7 @@ int ekt_fini(struct ekt_id **ekt_handle)
     free(ekth);
     *ekt_handle = NULL;
 
-    return(0);
+    return (0);
 }
 
 static int get_collector_count(int app_size)
@@ -840,8 +849,9 @@ static void deserialize_str_list(char *str, int count, char ***listp)
     }
 }
 
-static void add_peer(struct ekt_id *ekth, const char *name, int size, int rank_start, int rank_end,
-              char **addrs, int peer_id, int degree)
+static void add_peer(struct ekt_id *ekth, const char *name, int size,
+                     int rank_start, int rank_end, char **addrs, int peer_id,
+                     int degree)
 {
     struct ekt_peer *peer, **peerp;
     int addr_count = (rank_end - rank_start) + 1;
@@ -866,7 +876,7 @@ static void add_peer(struct ekt_id *ekth, const char *name, int size, int rank_s
         peer = *peerp;
     }
     if(peer->size == 0) {
-        //either new or a placeholder
+        // either new or a placeholder
         peer->size = size;
         peer->rank_start = rank_start;
         peer->rank_count = addr_count;
@@ -921,7 +931,9 @@ static int peer_hello(struct ekt_id *ekth, const char *boot_addr, char **addrs,
     return (peer_size);
 }
 
-static int get_peer_rank_info(struct ekt_id *ekth, const char *peer, char ***pcoll_addrs, int *pcoll_count, int *peer_id)
+static int get_peer_rank_info(struct ekt_id *ekth, const char *peer,
+                              char ***pcoll_addrs, int *pcoll_count,
+                              int *peer_id)
 {
     int peer_size;
     char *boot_addr;
@@ -939,7 +951,7 @@ static int get_peer_rank_info(struct ekt_id *ekth, const char *peer, char ***pco
                 response is peer's collector_addrs and app size
             */
             peer_size = peer_hello(ekth, boot_addr, &pcoll_addrs_buf,
-                                  &pcoll_addrs_buf_len, peer_id);
+                                   &pcoll_addrs_buf_len, peer_id);
             free(boot_addr);
         }
     }
@@ -947,18 +959,20 @@ static int get_peer_rank_info(struct ekt_id *ekth, const char *peer, char ***pco
     MPI_Bcast(&peer_size, 1, MPI_INT, 0, ekth->comm);
     *pcoll_count = get_collector_count(peer_size);
     if(ekth->gather_count > 0) {
-         MPI_Bcast(&pcoll_addrs_buf_len, 1, MPI_INT, 0, ekth->collector_comm);
-         if(ekth->rank != 0) {
-             pcoll_addrs_buf = malloc(pcoll_addrs_buf_len);
-         }
-         MPI_Bcast(pcoll_addrs_buf, pcoll_addrs_buf_len, MPI_BYTE, 0, ekth->collector_comm);
-         deserialize_str_list(pcoll_addrs_buf, *pcoll_count, pcoll_addrs); 
+        MPI_Bcast(&pcoll_addrs_buf_len, 1, MPI_INT, 0, ekth->collector_comm);
+        if(ekth->rank != 0) {
+            pcoll_addrs_buf = malloc(pcoll_addrs_buf_len);
+        }
+        MPI_Bcast(pcoll_addrs_buf, pcoll_addrs_buf_len, MPI_BYTE, 0,
+                  ekth->collector_comm);
+        deserialize_str_list(pcoll_addrs_buf, *pcoll_count, pcoll_addrs);
     }
 
-    return(peer_size);
+    return (peer_size);
 }
 
-static void get_peer_ranks(struct ekt_id *ekth, int peer_size, int *pstart, int *pend, int *degree)
+static void get_peer_ranks(struct ekt_id *ekth, int peer_size, int *pstart,
+                           int *pend, int *degree)
 {
     int *degrees;
     int sum = 0;
@@ -967,7 +981,7 @@ static void get_peer_ranks(struct ekt_id *ekth, int peer_size, int *pstart, int 
     *pstart = *pend = -1;
     if(peer_size < ekth->app_size) {
         degrees = part_map(ekth->app_size, peer_size);
-        for(i = 0 ; i < peer_size; i++) {
+        for(i = 0; i < peer_size; i++) {
             sum += degrees[i];
             if(sum > ekth->rank) {
                 *pstart = *pend = i;
@@ -975,7 +989,10 @@ static void get_peer_ranks(struct ekt_id *ekth, int peer_size, int *pstart, int 
             }
         }
         if(*pstart == -1) {
-            fprintf(stderr, "ERROR: could not find a fan-in node for rank %i with peer size %i\n", ekth->rank, peer_size);
+            fprintf(stderr,
+                    "ERROR: could not find a fan-in node for rank %i with peer "
+                    "size %i\n",
+                    ekth->rank, peer_size);
         }
         *degree = degrees[*pstart];
     } else {
@@ -988,12 +1005,14 @@ static void get_peer_ranks(struct ekt_id *ekth, int peer_size, int *pstart, int 
         *degree = 1;
     }
 
-    DEBUG_OUT("start peer is %i and end peer is %i\n", *pstart, *pend); 
+    DEBUG_OUT("start peer is %i and end peer is %i\n", *pstart, *pend);
 
     free(degrees);
 }
 
-static int gather_peer_ranges(struct ekt_id *ekth, int pstart, int pend, int **pstarts, int **pends){
+static int gather_peer_ranges(struct ekt_id *ekth, int pstart, int pend,
+                              int **pstarts, int **pends)
+{
     int gstart, gend;
     int i;
 
@@ -1007,33 +1026,47 @@ static int gather_peer_ranges(struct ekt_id *ekth, int pstart, int pend, int **p
 
     if(ekth->gather_count > 0) {
         gstart = (*pstarts)[0];
-        gend = (*pends)[ekth->gather_count-1];
+        gend = (*pends)[ekth->gather_count - 1];
         for(i = 0; i < ekth->gather_count; i++) {
             if((*pends)[i] < (*pstarts)[i]) {
-                fprintf(stderr, "ERROR: got a peer pair where start is %i and end is %i.\n", (*pstarts)[i], (*pends)[i]);
-                return(-1);
+                fprintf(
+                    stderr,
+                    "ERROR: got a peer pair where start is %i and end is %i.\n",
+                    (*pstarts)[i], (*pends)[i]);
+                return (-1);
             }
-            if((*pstarts)[i] != (*pends)[i+1] && i < ekth->gather_count - 1 && (*pstarts)[i+1] != (*pends)[i] + 1) {
-                fprintf(stderr, "ERROR: peer pair has end %i, but next peer starts at %i.\n",
-                        (*pends)[i], (*pstarts)[i+1]);
-                return(-1);
+            if((*pstarts)[i] != (*pends)[i + 1] && i < ekth->gather_count - 1 &&
+               (*pstarts)[i + 1] != (*pends)[i] + 1) {
+                fprintf(stderr,
+                        "ERROR: peer pair has end %i, but next peer starts at "
+                        "%i.\n",
+                        (*pends)[i], (*pstarts)[i + 1]);
+                return (-1);
             }
-            if((*pends)[i] > (*pends)[ekth->gather_count-1]) {
-                fprintf(stderr, "ERROR: peer pair ends at %i, but last peer pair end at %i.\n", (*pends)[i], gend);
-                return(-1);
+            if((*pends)[i] > (*pends)[ekth->gather_count - 1]) {
+                fprintf(stderr,
+                        "ERROR: peer pair ends at %i, but last peer pair end "
+                        "at %i.\n",
+                        (*pends)[i], gend);
+                return (-1);
             }
             if((*pstarts)[i] < (*pstarts)[0]) {
-                fprintf(stderr, "ERROR: peer pair starts at %i, but first peer pair start at %i.\n", (*pstarts)[i], gstart);
-                return(-1);
+                fprintf(stderr,
+                        "ERROR: peer pair starts at %i, but first peer pair "
+                        "start at %i.\n",
+                        (*pstarts)[i], gstart);
+                return (-1);
             }
         }
     }
 }
 
-static int query_collectors(struct ekt_id *ekth, char **pcoll_addrs, int pcoll_count, int peer_size, int *pstarts, int *pends, char ***peer_addrs)
+static int query_collectors(struct ekt_id *ekth, char **pcoll_addrs,
+                            int pcoll_count, int peer_size, int *pstarts,
+                            int *pends, char ***peer_addrs)
 {
-    int gstart, gend; // gather range
-    int qstart, qend;  // query range
+    int gstart, gend;   // gather range
+    int qstart, qend;   // query range
     int pcstart, pcend; // peer collector range
     char **query_res;
     int *query_res_len;
@@ -1043,30 +1076,35 @@ static int query_collectors(struct ekt_id *ekth, char **pcoll_addrs, int pcoll_c
     int i;
 
     gstart = pstarts[0];
-    gend = pends[ekth->gather_count-1];
+    gend = pends[ekth->gather_count - 1];
     DEBUG_OUT("need peer addresses for peers %i through %i\n", gstart, gend);
     pcstart = map_to_collector(gstart, peer_size);
     pcend = map_to_collector(gend, peer_size);
     DEBUG_OUT("need to query collectors %i through %i\n", pcstart, pcend);
 
     query_res = malloc(sizeof(*query_res) * ((pcend - pcstart) + 1));
-    query_res_len = malloc(sizeof(*query_res_len) * ((pcend - pcstart) + 1));    
+    query_res_len = malloc(sizeof(*query_res_len) * ((pcend - pcstart) + 1));
     for(i = pcstart; i <= pcend; i++) {
         map_from_collector(i, peer_size, &qstart, &qend);
-        DEBUG_OUT("peer collector %i responsible for peer %i through %i\n", i, qstart, qend);
-        if(qstart < gstart) qstart = gstart;
-        if(qend > gend) qend = gend;  
-        query_addrs(ekth, pcoll_addrs[i], qstart, qend, &query_res_len[i-pcstart], &query_res[i-pcstart]);
-        paddrs_buf_len += query_res_len[i-pcstart];
+        DEBUG_OUT("peer collector %i responsible for peer %i through %i\n", i,
+                  qstart, qend);
+        if(qstart < gstart)
+            qstart = gstart;
+        if(qend > gend)
+            qend = gend;
+        query_addrs(ekth, pcoll_addrs[i], qstart, qend,
+                    &query_res_len[i - pcstart], &query_res[i - pcstart]);
+        paddrs_buf_len += query_res_len[i - pcstart];
     }
     DEBUG_OUT("total peer address buffer length is %i\n", paddrs_buf_len);
 
-    paddrs_buf = malloc(paddrs_buf_len+1);
+    paddrs_buf = malloc(paddrs_buf_len + 1);
     paddrs_buf_p = paddrs_buf;
     for(i = pcstart; i <= pcend; i++) {
-        memcpy(paddrs_buf_p, query_res[i-pcstart], query_res_len[i-pcstart]);
-        paddrs_buf_p += query_res_len[i-pcstart];
-        free(query_res[i-pcstart]);
+        memcpy(paddrs_buf_p, query_res[i - pcstart],
+               query_res_len[i - pcstart]);
+        paddrs_buf_p += query_res_len[i - pcstart];
+        free(query_res[i - pcstart]);
     }
     paddrs_buf[paddrs_buf_len] = '\0'; // for finding total length of buffer
     free(query_res_len);
@@ -1077,10 +1115,12 @@ static int query_collectors(struct ekt_id *ekth, char **pcoll_addrs, int pcoll_c
         DEBUG_OUT("(*peer_addrs)[%i] = %p\n", i, (*peer_addrs)[i]);
     }
 
-    return(0);
+    return (0);
 }
 
-static int distribute_peers(struct ekt_id *ekth, char **pcoll_addrs, int pcoll_count, int peer_size, int *pstarts, int *pends, char **peers_buf)
+static int distribute_peers(struct ekt_id *ekth, char **pcoll_addrs,
+                            int pcoll_count, int peer_size, int *pstarts,
+                            int *pends, char **peers_buf)
 {
     char **gpeer_addrs;
     int len;
@@ -1091,21 +1131,25 @@ static int distribute_peers(struct ekt_id *ekth, char **pcoll_addrs, int pcoll_c
 
     if(ekth->gather_count > 0) {
         gstart = pstarts[0];
-        gend = pends[ekth->gather_count-1];
-        query_collectors(ekth, pcoll_addrs, pcoll_count, peer_size, pstarts, pends, &gpeer_addrs);
+        gend = pends[ekth->gather_count - 1];
+        query_collectors(ekth, pcoll_addrs, pcoll_count, peer_size, pstarts,
+                         pends, &gpeer_addrs);
         displs = malloc(sizeof(*displs) * ekth->gather_count);
         lens = malloc(sizeof(*lens) * ekth->gather_count);
         for(i = 0; i < ekth->gather_count; i++) {
-            displs[i] = gpeer_addrs[pstarts[i]-gstart] - gpeer_addrs[0];
-            lens[i] = gpeer_addrs[(pends[i]+1)-gstart] - gpeer_addrs[pstarts[i]-gstart];
-            DEBUG_OUT("for rank %i, sending displacement %i and length %i\n", ekth->rank + i, displs[i], lens[i]); 
+            displs[i] = gpeer_addrs[pstarts[i] - gstart] - gpeer_addrs[0];
+            lens[i] = gpeer_addrs[(pends[i] + 1) - gstart] -
+                      gpeer_addrs[pstarts[i] - gstart];
+            DEBUG_OUT("for rank %i, sending displacement %i and length %i\n",
+                      ekth->rank + i, displs[i], lens[i]);
         }
     }
 
     MPI_Scatter(lens, 1, MPI_INT, &len, 1, MPI_INT, 0, ekth->gather_comm);
     DEBUG_OUT("my length is %i\n", len);
     *peers_buf = malloc(len);
-    MPI_Scatterv(ekth->gather_count ? gpeer_addrs[0] : NULL, lens, displs, MPI_BYTE, *peers_buf, len, MPI_BYTE, 0, ekth->gather_comm);
+    MPI_Scatterv(ekth->gather_count ? gpeer_addrs[0] : NULL, lens, displs,
+                 MPI_BYTE, *peers_buf, len, MPI_BYTE, 0, ekth->gather_comm);
 
     if(ekth->gather_count > 0) {
         free(gpeer_addrs[0]);
@@ -1113,7 +1157,7 @@ static int distribute_peers(struct ekt_id *ekth, char **pcoll_addrs, int pcoll_c
         free(lens);
     }
 
-    return(0);
+    return (0);
 }
 
 int ekt_connect(struct ekt_id *ekth, const char *peer)
@@ -1129,9 +1173,10 @@ int ekt_connect(struct ekt_id *ekth, const char *peer)
     int peer_id;
 
     // pcoll_addrs and pcoll_count is valid on collectors after this call
-    peer_size = get_peer_rank_info(ekth, peer, &pcoll_addrs, &pcoll_count, &peer_id);
+    peer_size =
+        get_peer_rank_info(ekth, peer, &pcoll_addrs, &pcoll_count, &peer_id);
     if(peer_size == -1) {
-        return(-1);
+        return (-1);
     }
 
     DEBUG_OUT("%s has %i ranks, I am peer_id %i\n", peer, peer_size, peer_id);
@@ -1139,10 +1184,11 @@ int ekt_connect(struct ekt_id *ekth, const char *peer)
     get_peer_ranks(ekth, peer_size, &pstart, &pend, &degree);
     // pstarts and pends is valid on colelctors after this call
     if(gather_peer_ranges(ekth, pstart, pend, &pstarts, &pends) < 0) {
-        return(-1);
+        return (-1);
     }
-    if(distribute_peers(ekth, pcoll_addrs, pcoll_count, peer_size, pstarts, pends, &peers_buf) < 0) {
-        return(-1);
+    if(distribute_peers(ekth, pcoll_addrs, pcoll_count, peer_size, pstarts,
+                        pends, &peers_buf) < 0) {
+        return (-1);
     }
     deserialize_str_list(peers_buf, (pend - pstart) + 1, &peer_addrs);
 
@@ -1152,7 +1198,7 @@ int ekt_connect(struct ekt_id *ekth, const char *peer)
         free(pends);
     }
 
-    //install peer
+    // install peer
     ABT_mutex_lock(ekth->peer_mutex);
     DEBUG_OUT("installing peer\n");
     add_peer(ekth, peer, peer_size, pstart, pend, peer_addrs, peer_id, degree);
@@ -1163,7 +1209,7 @@ int ekt_connect(struct ekt_id *ekth, const char *peer)
 
     DEBUG_OUT("finished\n");
 
-    return(0);
+    return (0);
 }
 
 int ekt_watch(struct ekt_id *ekt_handle, struct ekt_type *type, watch_fn cb)
@@ -1245,7 +1291,8 @@ static int ekt_tell_peer(struct ekt_id *ekth, struct ekt_peer *peer,
             return (-1);
         }
         in.dst = peer->rank_start + i;
-        DEBUG_OUT("sending %s (%i) tell rpc of type %i with degree %i.\n", peer->peer_addrs[i], in.dst, in.type_id, in.degree);
+        DEBUG_OUT("sending %s (%i) tell rpc of type %i with degree %i.\n",
+                  peer->peer_addrs[i], in.dst, in.type_id, in.degree);
         hret = margo_iforward(handle, &in, &req);
         if(hret != HG_SUCCESS) {
             fprintf(stderr, "ERROR: failed to forward notification (%d)\n",
@@ -1254,10 +1301,11 @@ static int ekt_tell_peer(struct ekt_id *ekth, struct ekt_peer *peer,
             return (-1);
         }
         margo_destroy(handle);
-        DEBUG_OUT("told rank %i of %zu of '%s'\n", i, peer->rank_count, peer->name);
+        DEBUG_OUT("told rank %i of %zu of '%s'\n", i, peer->rank_count,
+                  peer->name);
     }
 
-    return(0);
+    return (0);
 }
 
 int ekt_tell(struct ekt_id *ekth, const char *target, struct ekt_type *type,
@@ -1267,7 +1315,7 @@ int ekt_tell(struct ekt_id *ekth, const char *target, struct ekt_type *type,
     int data_size;
     void *ser_data = NULL;
 
-    DEBUG_OUT("telling type %i\n", type->type_id); 
+    DEBUG_OUT("telling type %i\n", type->type_id);
 
     // transmit to all other ekt clients
     peer = ekth->peers;
@@ -1313,7 +1361,7 @@ int ekt_deregister(struct ekt_type **type)
     free(*type);
     *type = NULL;
 
-    return(0);
+    return (0);
 }
 
 int ekt_is_bidi(struct ekt_id *ekth, const char *name, int wait)
@@ -1325,7 +1373,8 @@ int ekt_is_bidi(struct ekt_id *ekth, const char *name, int wait)
     uint32_t out;
     hg_return_t hret;
 
-    DEBUG_OUT("Asking '%s' if they are connected to '%s'\n", name, ekth->app_name);
+    DEBUG_OUT("Asking '%s' if they are connected to '%s'\n", name,
+              ekth->app_name);
 
     ABT_mutex_lock(ekth->peer_mutex);
     for(peer = ekth->peers; peer; peer = peer->next) {

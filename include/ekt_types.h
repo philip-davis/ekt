@@ -109,7 +109,9 @@ static inline hg_return_t hg_proc_ekt_buf_t(hg_proc_t proc, void *data)
 }
 
 MERCURY_GEN_PROC(hello_in_t, ((hg_string_t)(name))((uint32_t)(size)));
-MERCURY_GEN_PROC(hello_out_t, ((uint32_t)(size))((uint32_t)(pid))((ekt_buf_t)(addrs)));
+MERCURY_GEN_PROC(hello_out_t,
+                 ((uint32_t)(size))((uint32_t)(pid))((ekt_buf_t)(addrs)));
 MERCURY_GEN_PROC(query_addrs_in_t, ((uint32_t)(start))((uint32_t)(end)));
-MERCURY_GEN_PROC(tell_in_t, ((uint32_t)(type_id))((uint32_t)(pid))((uint32_t)(degree))((uint32_t)(dst))((ekt_buf_t)(data)));
+MERCURY_GEN_PROC(tell_in_t, ((uint32_t)(type_id))((uint32_t)(pid))((uint32_t)(
+                                degree))((uint32_t)(dst))((ekt_buf_t)(data)));
 MERCURY_GEN_PROC(query_status_in_t, ((hg_string_t)(name))((uint32_t)(flag)));

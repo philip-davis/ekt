@@ -1,8 +1,8 @@
 #ifndef _EKT_TELL_HASH_H
 #define _EKT_TELL_HASH_H
 
-#include<stdlib.h>
-#include<string.h>
+#include <stdlib.h>
+#include <string.h>
 
 int hash_key(void *buf, size_t len, int mult, int mod)
 {
@@ -13,7 +13,7 @@ int hash_key(void *buf, size_t len, int mult, int mod)
         sum += (i + 1) * ((char *)buf)[i];
     }
 
-    return((sum * mult) % mod);
+    return ((sum * mult) % mod);
 }
 
 struct tell_hash_entry {
@@ -39,28 +39,32 @@ struct tell_hash *create_thash(int size, int salt)
     th->nbins = size;
     th->salt = salt;
 
-   return(th); 
+    return (th);
 }
 
-struct tell_hash_entry **find_thash_entry_p(struct tell_hash *th, void *buf, size_t len, int idx1, int idx2)
+struct tell_hash_entry **find_thash_entry_p(struct tell_hash *th, void *buf,
+                                            size_t len, int idx1, int idx2)
 {
     int key = hash_key(buf, len, th->salt, th->nbins);
     struct tell_hash_entry **entry_p = &th->bins[key];
     struct tell_hash_entry *entry;
-       
+
     while(*entry_p) {
         entry = *entry_p;
-        if(idx1 == entry->idx1 && idx2 == entry->idx2 && len == entry->len && memcmp(buf, entry->buf, len) == 0) {
-            return(entry_p);
+        if(idx1 == entry->idx1 && idx2 == entry->idx2 && len == entry->len &&
+           memcmp(buf, entry->buf, len) == 0) {
+            return (entry_p);
         }
         entry_p = &entry->next;
     }
-    return(entry_p);
+    return (entry_p);
 }
 
-int incr_thash_entry(struct tell_hash *th, void *buf, size_t len, int idx1, int idx2)
+int incr_thash_entry(struct tell_hash *th, void *buf, size_t len, int idx1,
+                     int idx2)
 {
-    struct tell_hash_entry **entry_p = find_thash_entry_p(th, buf, len, idx1, idx2);
+    struct tell_hash_entry **entry_p =
+        find_thash_entry_p(th, buf, len, idx1, idx2);
     struct tell_hash_entry *entry = *entry_p;
 
     if(entry) {
@@ -78,23 +82,25 @@ int incr_thash_entry(struct tell_hash *th, void *buf, size_t len, int idx1, int 
         *entry_p = entry;
     }
 
-    return(entry->val);
-} 
+    return (entry->val);
+}
 
-int delete_thash_entry(struct tell_hash *th, void *buf, size_t len, int idx1, int idx2)
+int delete_thash_entry(struct tell_hash *th, void *buf, size_t len, int idx1,
+                       int idx2)
 {
-    struct tell_hash_entry **entry_p = find_thash_entry_p(th, buf, len, idx1, idx2); 
+    struct tell_hash_entry **entry_p =
+        find_thash_entry_p(th, buf, len, idx1, idx2);
     struct tell_hash_entry *entry = *entry_p;
 
     if(!entry) {
-        return(-1);
+        return (-1);
     }
 
     entry_p = &entry->next;
     free(entry->buf);
     free(entry);
 
-    return(0);
+    return (0);
 }
 
 #endif
