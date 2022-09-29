@@ -96,7 +96,7 @@ int delete_thash_entry(struct tell_hash *th, void *buf, size_t len, int idx1,
         return (-1);
     }
 
-    entry_p = &entry->next;
+    *entry_p = entry->next;
     free(entry->buf);
     free(entry);
 

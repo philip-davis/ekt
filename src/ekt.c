@@ -476,7 +476,6 @@ static void tell_rpc(hg_handle_t handle)
         DEBUG_OUT("received copy %i of identical type %i tell from %i with len "
                   "%li, doing cb.\n",
                   recv_count, in.type_id, in.pid, in.data.len);
-        ABT_mutex_unlock(ekth->peer_mutex);
         deser_tell_data(ekth, in.type_id, in.data.buf, &data);
         ekt_handle_announce(ekth, in.type_id, data);
         free(data);
@@ -1291,8 +1290,8 @@ static int ekt_tell_peer(struct ekt_id *ekth, struct ekt_peer *peer,
             return (-1);
         }
         in.dst = peer->rank_start + i;
-        DEBUG_OUT("sending %s (%i) tell rpc of type %i with degree %i.\n",
-                  peer->peer_addrs[i], in.dst, in.type_id, in.degree);
+        DEBUG_OUT("sending %s (%i) tell rpc of type %i with degree %i to %i.\n",
+                  peer->peer_addrs[i], in.dst, in.type_id, in.degree, peer->rank_start + i);
         hret = margo_iforward(handle, &in, &req);
         if(hret != HG_SUCCESS) {
             fprintf(stderr, "ERROR: failed to forward notification (%d)\n",
@@ -1301,7 +1300,7 @@ static int ekt_tell_peer(struct ekt_id *ekth, struct ekt_peer *peer,
             return (-1);
         }
         margo_destroy(handle);
-        DEBUG_OUT("told rank %i of %zu of '%s'\n", i, peer->rank_count,
+        DEBUG_OUT("told rank %i of '%s'\n", peer->rank_start + i,
                   peer->name);
     }
 
