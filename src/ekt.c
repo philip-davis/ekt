@@ -1058,6 +1058,8 @@ static int gather_peer_ranges(struct ekt_id *ekth, int pstart, int pend,
             }
         }
     }
+
+    return(0);
 }
 
 static int query_collectors(struct ekt_id *ekth, char **pcoll_addrs,
@@ -1290,7 +1292,7 @@ static int ekt_tell_peer(struct ekt_id *ekth, struct ekt_peer *peer,
             return (-1);
         }
         in.dst = peer->rank_start + i;
-        DEBUG_OUT("sending %s (%i) tell rpc of type %i with degree %i to %i.\n",
+        DEBUG_OUT("sending %s (%i) tell rpc of type %i with degree %i to %zi.\n",
                   peer->peer_addrs[i], in.dst, in.type_id, in.degree, peer->rank_start + i);
         hret = margo_iforward(handle, &in, &req);
         if(hret != HG_SUCCESS) {
@@ -1300,7 +1302,7 @@ static int ekt_tell_peer(struct ekt_id *ekth, struct ekt_peer *peer,
             return (-1);
         }
         margo_destroy(handle);
-        DEBUG_OUT("told rank %i of '%s'\n", peer->rank_start + i,
+        DEBUG_OUT("told rank %zi of '%s'\n", peer->rank_start + i,
                   peer->name);
     }
 
