@@ -402,7 +402,7 @@ static void query_addrs_rpc(hg_handle_t handle)
                   ekth->gather_addrs[in.start - mystart];
     }
 
-    DEBUG_OUT("length of response is %zi\n", out.len);
+    DEBUG_OUT("length of response is %" PRIu64 "\n", out.len);
 
     out.buf = malloc(out.len);
     memcpy(out.buf, ekth->gather_addrs[in.start - mystart], out.len);
@@ -474,7 +474,7 @@ static void tell_rpc(hg_handle_t handle)
     ABT_mutex_unlock(ekth->peer_mutex);
     if(recv_count == in.degree) {
         DEBUG_OUT("received copy %i of identical type %i tell from %i with len "
-                  "%li, doing cb.\n",
+                  "%" PRIu64 ", doing cb.\n",
                   recv_count, in.type_id, in.pid, in.data.len);
         deser_tell_data(ekth, in.type_id, in.data.buf, &data);
         ekt_handle_announce(ekth, in.type_id, data);
@@ -485,7 +485,7 @@ static void tell_rpc(hg_handle_t handle)
         ABT_mutex_unlock(ekth->peer_mutex);
     } else {
         DEBUG_OUT("received copy %i of identical type %i tell from %i, waiting "
-                  "for %i, with len %li.\n",
+                  "for %i, with len %" PRIu64 ".\n",
                   recv_count, in.type_id, in.pid, in.degree, in.data.len);
     }
 
@@ -786,8 +786,8 @@ static int query_addrs(struct ekt_id *ekth, char *tgt_addr, int lower,
     }
 
     *addrs_len = out.len;
-    DEBUG_OUT("length of addresses of peer %i through %i, asked of %s, is %zi "
-              "bytes.\n",
+    DEBUG_OUT("length of addresses of peer %i through %i, asked of %s, is %" PRIu64
+              " bytes.\n",
               lower, upper, tgt_addr, out.len);
     *addrs = malloc(out.len);
     memcpy(*addrs, out.buf, out.len);
