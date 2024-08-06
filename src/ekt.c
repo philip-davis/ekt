@@ -34,17 +34,33 @@
 #define APEX_TIMER_STOP(num) (void)0;
 #endif
 
-#define DEBUG_OUT(...)                                                         \
+#define DEBUG_OUT(dstr, ...)                                                   \
     do {                                                                       \
         if(ekth->f_debug) {                                                    \
-            char *dbgpfx, *dbgmsg;                                             \
-            asprintf(&dbgpfx, "Rank %i: %s, line %i (%s):", ekth->rank,        \
-                     __FILE__, __LINE__, __func__);                            \
-            asprintf(&dbgmsg, __VA_ARGS__);                                    \
-            fprintf(stderr, "%s %s", dbgpfx, dbgmsg);                          \
-            free(dbgpfx);                                                      \
-            free(dbgmsg);                                                      \
+            ABT_unit_id tid = 0;                                               \
+            if(ABT_initialized())                                              \
+                ABT_thread_self_id(&tid);                                      \
+            fprintf(stderr, "Rank %i: TID: %" PRIu64 " %s:%i (%s): " dstr,     \
+                    ekth->rank, tid, __FILE__, __LINE__, __func__,             \
+                    ##__VA_ARGS__);                                            \
         }                                                                      \
+    } while(0);
+
+#define WARN_OUT(wstr, ...)                                                    \
+    do {                                                                       \
+        ABT_unit_id tid = 0;                                                   \
+        if(ABT_initialized())                                                  \
+            ABT_thread_self_id(&tid);                                          \
+        fprintf(stderr, "WARN: Rank %i: TID: %" PRIu64 " %s:%i (%s): " wstr,   \
+                ekth->rank, tid, __FILE__, __LINE__, __func__, ##__VA_ARGS__); \
+    } while(0);
+
+#define ERR_OUT(estr, ...)                                                     \
+    do {                                                                       \
+        ABT_unit_id tid;                                                       \
+        ABT_thread_self_id(&tid);                                              \
+        fprintf(stderr, "ERROR: Rank: %i: TID: %" PRIu64 " %s:%i (%s): " estr, \
+                ekth->rank, tid, __FILE__, __LINE__, __func__, ##__VA_ARGS__); \
     } while(0);
 
 int ekt_handle_announce(struct ekt_id *ekt_handle, int type_id, void *data);
@@ -210,15 +226,13 @@ static int write_bootstrap_conf(struct ekt_id *ekth)
 
     file = open(fname, O_CREAT | O_EXCL | O_WRONLY, S_IRUSR | S_IWUSR);
     if(file < 0) {
-        fprintf(stderr,
-                "ERROR: %s: unable to open '%s' for writing: ", __func__,
-                fname);
+        ERR_OUT("unable to open '%s' for writing: ", fname);
         perror(NULL);
         return (-1);
     }
 
     if(fcntl(file, F_SETLK, &lock) < 0) {
-        fprintf(stderr, "ERROR: %s: unable to lock '%s': ", __func__, fname);
+        ERR_OUT("unable to lock '%s': ", fname);
         perror(NULL);
         close(file);
         return (-1);
@@ -229,10 +243,9 @@ static int write_bootstrap_conf(struct ekt_id *ekth)
 
     lock.l_type = F_UNLCK;
     if(fcntl(file, F_SETLK, &lock) < 0) {
-        fprintf(stderr,
-                "WARNING: %s: could not unlock '%s'. This will cause problems "
-                "with other apps connecting. ",
-                __func__, fname);
+        WARN_OUT("could not unlock '%s'. This will cause problems with other "
+                 "apps connecting.\n",
+                 fname);
     }
 
     close(file);
@@ -258,9 +271,7 @@ static int read_bootstrap_conf(struct ekt_id *ekth, const char *peer,
                 sleep(1);
                 continue;
             } else {
-                fprintf(
-                    stderr,
-                    "ERROR: could not open bootstrapping file '%s': ", fname);
+                ERR_OUT("could not open bootstrapping file '%s': ", fname);
                 perror(NULL);
                 return (-1);
             }
@@ -277,15 +288,13 @@ static int read_bootstrap_conf(struct ekt_id *ekth, const char *peer,
 
     file = open(fname, O_RDONLY);
     if(file < 0) {
-        fprintf(stderr,
-                "ERROR: %s: unable to open '%s' for reading: ", __func__,
-                fname);
+        ERR_OUT("unable to open '%s' for reading: ", fname);
         perror(NULL);
         return (-1);
     }
 
     if(fcntl(file, F_SETLKW, &lock) < 0) {
-        fprintf(stderr, "ERROR: %s: unable to lock '%s': ", __func__, fname);
+        ERR_OUT("unable to lock '%s': ", fname);
         perror(NULL);
         close(file);
         return (-1);
@@ -298,10 +307,9 @@ static int read_bootstrap_conf(struct ekt_id *ekth, const char *peer,
 
     lock.l_type = F_UNLCK;
     if(fcntl(file, F_SETLK, &lock) < 0) {
-        fprintf(stderr,
-                "WARNING: %s: could not unlock '%s'. This will cause problems "
-                "with other apps connecting. ",
-                __func__, fname);
+        WARN_OUT("could not unlock '%s'. This will cause problems with other "
+                 "apps connecting.\n",
+                 fname);
     }
 
     close(file);
@@ -368,10 +376,7 @@ static void query_addrs_rpc(hg_handle_t handle)
     ekth = (struct ekt_id *)margo_registered_data(mid, info->id);
 
     if(ekth->gather_count == 0) {
-        fprintf(stderr,
-                "ERROR: (%s): received an an address query at a non-collector "
-                "rank.\n",
-                __func__);
+        ERR_OUT("received an an address query at a non-collector rank.\n")
     }
 
     hret = margo_get_input(handle, &in);
@@ -382,10 +387,9 @@ static void query_addrs_rpc(hg_handle_t handle)
 
     if(map_to_collector(in.start, ekth->app_size) != crank ||
        map_to_collector(in.end, ekth->app_size) != crank) {
-        fprintf(stderr,
-                "ERROR: (%s): received an address query for ranks %d through "
-                "%d, which is outside the range managed by rank %d.\n",
-                __func__, in.start, in.end, ekth->rank);
+        ERR_OUT("received an address query for ranks %d through %d, which is "
+                "outside the range managed by rank %d.\n",
+                in.start, in.end, ekth->rank);
     }
 
     map_from_collector(crank, ekth->app_size, &mystart, &myend);
@@ -433,9 +437,7 @@ static int deser_tell_data(struct ekt_id *ekth, int type_id, void *ser_data,
     }
 
     if(!cb_node) {
-        fprintf(stderr,
-                "WARNING: received announcement with unknown type %d.\n",
-                type_id);
+        WARN_OUT("received announcement with unknown type %d.\n", type_id);
         return (-1);
     }
 
@@ -463,9 +465,8 @@ static void tell_rpc(hg_handle_t handle)
     hret = margo_get_input(handle, &in);
 
     if(in.dst != ekth->rank) {
-        fprintf(stderr,
-                "ERROR: received tell rpc with dst %i, but I am rank %i\n",
-                in.dst, ekth->rank);
+        ERR_OUT("received tell rpc with dst %i, but I am rank %i\n", in.dst,
+                ekth->rank);
     }
 
     ABT_mutex_lock(ekth->peer_mutex);
@@ -773,22 +774,23 @@ static int query_addrs(struct ekt_id *ekth, char *tgt_addr, int lower,
     margo_create(ekth->mid, addr, ekth->query_addrs_id, &handle);
     hret = margo_forward(handle, &in);
     if(hret != HG_SUCCESS) {
-        fprintf(stderr, "ERROR: (%d): margo_forward() failed.\n", hret);
+        ERR_OUT("margo_forward() failed with %d\n", hret);
         margo_destroy(handle);
         return (-1);
     }
 
     hret = margo_get_output(handle, &out);
     if(hret != HG_SUCCESS) {
-        fprintf(stderr, "ERROR: (%d): margo_get_output() failed.\n", hret);
+        ERR_OUT("margo_get_output() failed with %d.\n", hret);
         margo_destroy(handle);
         return (-1);
     }
 
     *addrs_len = out.len;
-    DEBUG_OUT("length of addresses of peer %i through %i, asked of %s, is %" PRIu64
-              " bytes.\n",
-              lower, upper, tgt_addr, out.len);
+    DEBUG_OUT(
+        "length of addresses of peer %i through %i, asked of %s, is %" PRIu64
+        " bytes.\n",
+        lower, upper, tgt_addr, out.len);
     *addrs = malloc(out.len);
     memcpy(*addrs, out.buf, out.len);
 
@@ -901,20 +903,19 @@ static int peer_hello(struct ekt_id *ekth, const char *boot_addr, char **addrs,
 
     hret = margo_create(ekth->mid, server_addr, ekth->hello_id, &handle);
     if(hret != HG_SUCCESS) {
-        fprintf(stderr, "ERROR: failed to create hello rpc (%d)\n", hret);
+        ERR_OUT("margo_create() failed with %d\n", hret);
         return (-1);
     }
     hret = margo_forward(handle, &hin);
     if(hret != HG_SUCCESS) {
-        fprintf(stderr, "ERROR: failed to send hello rpc (%d)\n", hret);
+        ERR_OUT("margo_forward() failed with %d.\n", hret);
         margo_destroy(handle);
         return (-1);
     }
 
     hret = margo_get_output(handle, &hout);
     if(hret != HG_SUCCESS) {
-        fprintf(stderr, "ERROR: failed to get status of hello rpc (%d)\n",
-                hret);
+        ERR_OUT("margo_get_output() failed with %d.\n", hret);
         margo_destroy(handle);
         return (-1);
     }
@@ -942,7 +943,7 @@ static int get_peer_rank_info(struct ekt_id *ekth, const char *peer,
     if(ekth->rank == 0) {
         // rank 0 reads bootstrapping conf
         if(read_bootstrap_conf(ekth, peer, &boot_addr) < 0) {
-            fprintf(stderr, "ERROR: could not read peer bootstrap file.\n");
+            ERR_OUT(" could not read peer bootstrap file.\n");
             peer_size = -1;
         } else {
             /* rank 0 contacts rank 0 of peer:
@@ -988,10 +989,9 @@ static void get_peer_ranks(struct ekt_id *ekth, int peer_size, int *pstart,
             }
         }
         if(*pstart == -1) {
-            fprintf(stderr,
-                    "ERROR: could not find a fan-in node for rank %i with peer "
-                    "size %i\n",
-                    ekth->rank, peer_size);
+            ERR_OUT(
+                "could not find a fan-in node for rank %i with peer size %i.\n",
+                ekth->rank, peer_size);
         }
         *degree = degrees[*pstart];
     } else {
@@ -1028,38 +1028,31 @@ static int gather_peer_ranges(struct ekt_id *ekth, int pstart, int pend,
         gend = (*pends)[ekth->gather_count - 1];
         for(i = 0; i < ekth->gather_count; i++) {
             if((*pends)[i] < (*pstarts)[i]) {
-                fprintf(
-                    stderr,
-                    "ERROR: got a peer pair where start is %i and end is %i.\n",
-                    (*pstarts)[i], (*pends)[i]);
+                ERR_OUT("got a peer pair where start is %i and end is %i.\n",
+                        (*pstarts)[i], (*pends)[i]);
                 return (-1);
             }
             if((*pstarts)[i] != (*pends)[i + 1] && i < ekth->gather_count - 1 &&
                (*pstarts)[i + 1] != (*pends)[i] + 1) {
-                fprintf(stderr,
-                        "ERROR: peer pair has end %i, but next peer starts at "
-                        "%i.\n",
+                ERR_OUT("peer pair has end %i, but next peer starts at %i.\n",
                         (*pends)[i], (*pstarts)[i + 1]);
                 return (-1);
             }
             if((*pends)[i] > (*pends)[ekth->gather_count - 1]) {
-                fprintf(stderr,
-                        "ERROR: peer pair ends at %i, but last peer pair end "
-                        "at %i.\n",
+                ERR_OUT("peer pair ends at %i, but last peer pair end at %i.\n",
                         (*pends)[i], gend);
                 return (-1);
             }
             if((*pstarts)[i] < (*pstarts)[0]) {
-                fprintf(stderr,
-                        "ERROR: peer pair starts at %i, but first peer pair "
-                        "start at %i.\n",
+                ERR_OUT("peer pair starts at %i, but first peer pair start at "
+                        "%i.\n",
                         (*pstarts)[i], gstart);
                 return (-1);
             }
         }
     }
 
-    return(0);
+    return (0);
 }
 
 static int query_collectors(struct ekt_id *ekth, char **pcoll_addrs,
@@ -1213,16 +1206,15 @@ int ekt_connect(struct ekt_id *ekth, const char *peer)
     return (0);
 }
 
-int ekt_watch(struct ekt_id *ekt_handle, struct ekt_type *type, watch_fn cb)
+int ekt_watch(struct ekt_id *ekth, struct ekt_type *type, watch_fn cb)
 {
     int type_id = type->type_id;
     int type_hash = type_id % EKT_WATCH_HASH_SIZE;
-    struct watch_list_node **cb_node = &ekt_handle->watch_cbs[type_hash];
+    struct watch_list_node **cb_node = &ekth->watch_cbs[type_hash];
 
     while(*cb_node) {
         if((*cb_node)->type_id) {
-            fprintf(stderr, "ERROR: %s: already watching type_id %i.\n",
-                    __func__, type_id);
+            WARN_OUT("already watching type_id %i.", type_id);
             return (-1);
         }
         cb_node = &((*cb_node)->next);
@@ -1237,10 +1229,10 @@ int ekt_watch(struct ekt_id *ekt_handle, struct ekt_type *type, watch_fn cb)
     return (0);
 }
 
-int ekt_handle_announce(struct ekt_id *ekt_handle, int type_id, void *data)
+int ekt_handle_announce(struct ekt_id *ekth, int type_id, void *data)
 {
     int type_hash = type_id % EKT_WATCH_HASH_SIZE;
-    struct watch_list_node *cb_node = ekt_handle->watch_cbs[type_hash];
+    struct watch_list_node *cb_node = ekth->watch_cbs[type_hash];
 
     while(cb_node) {
         if(cb_node->type_id == type_id) {
@@ -1250,9 +1242,7 @@ int ekt_handle_announce(struct ekt_id *ekt_handle, int type_id, void *data)
     }
 
     if(!cb_node) {
-        fprintf(stderr,
-                "WARNING: received announcement with unknown type %d.\n",
-                type_id);
+        WARN_OUT("received announcement with unknown type %d.\n", type_id);
         return (0);
     }
 
@@ -1271,7 +1261,7 @@ static int ekt_tell_peer(struct ekt_id *ekth, struct ekt_peer *peer,
 
     DEBUG_OUT("telling peer '%s'\n", peer->name);
     if(!type) {
-        fprintf(stderr, "ERROR: bad type passed to ekt_tell.\n");
+        ERR_OUT(" bad type passed to ekt_tell.\n");
         return (-1);
     }
     in.type_id = type->type_id;
@@ -1288,22 +1278,22 @@ static int ekt_tell_peer(struct ekt_id *ekth, struct ekt_peer *peer,
         margo_addr_lookup(ekth->mid, peer->peer_addrs[i], &peer_addr);
         hret = margo_create(ekth->mid, peer_addr, ekth->tell_id, &handle);
         if(hret != HG_SUCCESS) {
-            fprintf(stderr, "ERROR: failed to create hello rpc (%d)\n", hret);
+            ERR_OUT("failed to create hello rpc (%d)\n", hret);
             return (-1);
         }
         in.dst = peer->rank_start + i;
-        DEBUG_OUT("sending %s (%i) tell rpc of type %i with degree %i to %zi.\n",
-                  peer->peer_addrs[i], in.dst, in.type_id, in.degree, peer->rank_start + i);
+        DEBUG_OUT(
+            "sending %s (%i) tell rpc of type %i with degree %i to %zi.\n",
+            peer->peer_addrs[i], in.dst, in.type_id, in.degree,
+            peer->rank_start + i);
         hret = margo_iforward(handle, &in, &req);
         if(hret != HG_SUCCESS) {
-            fprintf(stderr, "ERROR: failed to forward notification (%d)\n",
-                    hret);
+            ERR_OUT("failed to forward notification (%d)\n", hret);
             margo_destroy(handle);
             return (-1);
         }
         margo_destroy(handle);
-        DEBUG_OUT("told rank %zi of '%s'\n", peer->rank_start + i,
-                  peer->name);
+        DEBUG_OUT("told rank %zi of '%s'\n", peer->rank_start + i, peer->name);
     }
 
     return (0);
@@ -1392,8 +1382,7 @@ int ekt_is_bidi(struct ekt_id *ekth, const char *name, int wait)
         }
     }
     ABT_mutex_unlock(ekth->peer_mutex);
-    fprintf(stderr, "ERROR: %s: '%s' is not a connected peer.\n", __func__,
-            name);
+    ERR_OUT("'%s' is not a connected peer.\n", name);
     return (0);
 }
 
