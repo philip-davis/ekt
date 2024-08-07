@@ -428,6 +428,7 @@ static int deser_tell_data(struct ekt_id *ekth, int type_id, void *ser_data,
     int type_hash = type_id % EKT_WATCH_HASH_SIZE;
     struct watch_list_node *cb_node = ekth->watch_cbs[type_hash];
     struct ekt_type *type;
+    size_t res_size;
 
     while(cb_node) {
         if(cb_node->type_id == type_id) {
@@ -442,7 +443,10 @@ static int deser_tell_data(struct ekt_id *ekth, int type_id, void *ser_data,
     }
 
     type = cb_node->type;
-    type->des(ser_data, type->arg, deser_data);
+    res_size = type->des(ser_data, type->arg, deser_data);
+    if(res_size < 0) {
+        return(-1);
+    }
 
     return (0);
 }
@@ -477,9 +481,12 @@ static void tell_rpc(hg_handle_t handle)
         DEBUG_OUT("received copy %i of identical type %i tell from %i with len "
                   "%" PRIu64 ", doing cb.\n",
                   recv_count, in.type_id, in.pid, in.data.len);
-        deser_tell_data(ekth, in.type_id, in.data.buf, &data);
-        ekt_handle_announce(ekth, in.type_id, data);
-        free(data);
+        if(deser_tell_data(ekth, in.type_id, in.data.buf, &data) == 0) {
+            ekt_handle_announce(ekth, in.type_id, data);
+            free(data);
+        } else {
+            ERR_OUT("deserialization failed. Skipped handling.\n");
+        } 
         ABT_mutex_lock(ekth->peer_mutex);
         delete_thash_entry(ekth->thash, in.data.buf, in.data.len, in.pid,
                            in.type_id);
