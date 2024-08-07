@@ -443,12 +443,8 @@ static int deser_tell_data(struct ekt_id *ekth, int type_id, void *ser_data,
     }
 
     type = cb_node->type;
-    res_size = type->des(ser_data, type->arg, deser_data);
-    if(res_size < 0) {
-        return(-1);
-    }
 
-    return (0);
+    return(type->des(ser_data, type->arg, deser_data));
 }
 
 static void tell_rpc(hg_handle_t handle)
@@ -1319,6 +1315,10 @@ int ekt_tell(struct ekt_id *ekth, const char *target, struct ekt_type *type,
     peer = ekth->peers;
     if(peer) {
         data_size = type->ser(data, type->arg, &ser_data);
+        if(data_size < 0) {
+            ERR_OUT("serialization failed.\n");
+            return(-1);        
+        }
     }
 
     while(peer) {
